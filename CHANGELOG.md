@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/devops-ia/pr-generator/compare/v1.0.0...v1.1.0) (2026-03-25)
+
+
+### Features
+
+* upload code ([476519a](https://github.com/devops-ia/pr-generator/commit/476519a39e29d83bd1b66c1df189873be1b88795))
+
 # 1.0.0 (2026-03-25)
 
 
