@@ -1,3 +1,12 @@
+# 1.0.0 (2026-03-25)
+
+
+### Features
+
+* Initial commit ([6f76bb9](https://github.com/devops-ia/pr-generator/commit/6f76bb910249276c223b0160a2218c95960fdb93))
+* upload code ([a27dc63](https://github.com/devops-ia/pr-generator/commit/a27dc6311f6b2b0839683ed1721cf113fc72eac6))
+* upload code ([1955d66](https://github.com/devops-ia/pr-generator/commit/1955d663a008bbff73f70a1e298a8c64739d507e))
+
 ## [1.2.3](https://github.com/devops-ia/pr-generator/compare/v1.2.2...v1.2.3) (2026-03-25)
 
 
