@@ -7,7 +7,7 @@ import logging
 import signal
 import sys
 import time
-from importlib.metadata import version as pkg_version
+from importlib.metadata import PackageNotFoundError, version as pkg_version
 from threading import Event
 
 from pr_generator.config import load_config
@@ -25,10 +25,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Automated PR creation daemon for GitHub and Bitbucket Cloud.",
     )
+    try:
+        _version = pkg_version("pr-generator")
+    except PackageNotFoundError:
+        _version = "unknown"
     parser.add_argument(
         "--version",
         action="version",
-        version=f"pr-generator {pkg_version('pr-generator')}",
+        version=f"pr-generator {_version}",
     )
     parser.parse_args()
 
