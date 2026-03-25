@@ -57,8 +57,7 @@ def main() -> None:
             logger.warning("[Core] Unknown provider type '%s' for '%s'; skipping.", pconf.type, pname)
 
     if not providers:
-        logger.error("[Core] Step: startup action=error detail=No active providers configured.")
-        sys.exit(1)
+        logger.warning("[Core] Step: startup action=warn detail=No active providers configured; running in idle mode")
 
     # Graceful shutdown
     stop = Event()

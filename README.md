@@ -179,7 +179,7 @@ rules:
 | `dry_run` | bool | `false` | Simulate PR creation without API calls |
 | `health_port` | int | `8080` | Port for health HTTP server |
 | `providers.<name>.type` | string | *(key name)* | Provider implementation: `github` or `bitbucket`. Required when the key name is not `github` or `bitbucket` |
-| `providers.<name>.enabled` | bool | — | Activate this provider instance |
+| `providers.<name>.enabled` | bool | `false` | Activate this provider instance. If no providers are enabled the application starts in **idle mode** — it logs a warning and keeps running without performing any scans |
 | `providers.<name>.owner` | string | — | GitHub organisation or user *(GitHub only)* |
 | `providers.<name>.repo` | string | — | Repository name *(GitHub only)* |
 | `providers.<name>.app_id` | string | — | GitHub App ID *(GitHub App auth)* |

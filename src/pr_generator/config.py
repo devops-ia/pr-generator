@@ -47,7 +47,7 @@ def _load_from_file(path: str) -> AppConfig:
     if not rules:
         raise ValueError("[Core] config.yaml has no rules defined.")
     if not providers:
-        raise ValueError("[Core] config.yaml has no enabled providers.")
+        logger.info("[Core] Step: load_config action=warn detail=no enabled providers configured; running in idle mode")
 
     config = AppConfig(
         scan_frequency=int(raw.get("scan_frequency", 300)),

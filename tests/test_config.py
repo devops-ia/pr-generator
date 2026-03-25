@@ -389,8 +389,8 @@ class TestMultiOrgGitHub:
 class TestConfigValidationEdgeCases:
     """Cover validation branches not exercised by the main test classes."""
 
-    def test_no_enabled_providers_raises(self, tmp_path, monkeypatch):
-        """All providers disabled → ValueError about no enabled providers."""
+    def test_no_enabled_providers_loads_idle(self, tmp_path, monkeypatch):
+        """All providers disabled → app loads successfully in idle mode (no ValueError)."""
         path = _write_config(tmp_path, """
             providers:
               github:
@@ -404,8 +404,8 @@ class TestConfigValidationEdgeCases:
         """)
         monkeypatch.setenv("CONFIG_PATH", path)
         from pr_generator.config import load_config
-        with pytest.raises(ValueError, match="no enabled providers"):
-            load_config()
+        config = load_config()
+        assert config.providers == {}
 
     def test_non_dict_provider_entry_skipped(self, tmp_path, monkeypatch):
         """A provider entry that isn't a dict is silently skipped."""
@@ -638,8 +638,8 @@ class TestNullYamlValues:
         with pytest.raises(ValueError):
             load_config()
 
-    def test_null_providers_section_raises(self, tmp_path, monkeypatch):
-        """providers: with no value (null) must raise ValueError, not AttributeError."""
+    def test_null_providers_section_loads_idle(self, tmp_path, monkeypatch):
+        """providers: with no value (null) loads successfully in idle mode."""
         self._base_config(tmp_path, monkeypatch, """
             providers:
             rules:
@@ -648,8 +648,8 @@ class TestNullYamlValues:
                   bitbucket: main
         """)
         from pr_generator.config import load_config
-        with pytest.raises(ValueError, match="no enabled providers"):
-            load_config()
+        config = load_config()
+        assert config.providers == {}
 
     def test_null_rules_section_raises(self, tmp_path, monkeypatch):
         """rules: with no value (null) must raise ValueError, not AttributeError."""
