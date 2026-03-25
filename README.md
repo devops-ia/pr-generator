@@ -1,4 +1,4 @@
-# PR generator image
+# PR generator
 
 [![CI](https://github.com/devops-ia/pr-generator/actions/workflows/docker-build.yml/badge.svg)](https://github.com/devops-ia/pr-generator/actions/workflows/docker-build.yml)
 [![GitHub release](https://img.shields.io/github/v/release/devops-ia/pr-generator)](https://github.com/devops-ia/pr-generator/releases)
