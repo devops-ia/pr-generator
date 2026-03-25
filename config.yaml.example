@@ -1,0 +1,140 @@
+# config.yaml.example
+#
+# Copy this file to config.yaml (or any path) and set CONFIG_PATH to point to it.
+# Remove or comment out sections for providers you are not using.
+#
+# Usage:
+#   CONFIG_PATH=./config.yaml pr-generator
+
+# ──────────────────────────────────────────────────────────
+# General settings
+# ──────────────────────────────────────────────────────────
+
+# How often (seconds) to scan for new branches.
+scan_frequency: 300        # default: 300
+
+# Logging level: DEBUG | INFO | WARNING | ERROR
+log_level: INFO            # default: INFO
+
+# Log format: "text" (human-readable) or "json" (for log aggregators like ELK / Loki).
+log_format: text           # default: text
+
+# When true, PRs are logged but never actually created. Useful for testing config.
+dry_run: false             # default: false
+
+# Port for the built-in health HTTP server (/livez, /readyz, /healthz).
+health_port: 8080          # default: 8080
+
+# ──────────────────────────────────────────────────────────
+# Providers
+#
+# Each entry is a named provider instance.
+# The key is a free-form name used in rules (e.g. "github", "github-acme").
+# Set "type" to "github" or "bitbucket" when the key name is not one of those.
+# ──────────────────────────────────────────────────────────
+
+providers:
+
+  # ── GitHub (GitHub App authentication — recommended) ──────────────
+  github:
+    enabled: true
+
+    # The GitHub organisation or user that owns the repository.
+    owner: my-org
+
+    # The repository name.
+    repo: my-repo
+
+    # Authentication method: "app" (GitHub App, default) or "pat" (Personal Access Token).
+    auth_method: app        # default: app
+
+    # GitHub App credentials (required when auth_method is "app").
+    app_id: "123456"
+    installation_id: "78901234"   # optional — auto-resolved from the repo if omitted
+
+    # Path to the GitHub App RSA private key PEM file.
+    private_key_path: /secrets/github-app.pem
+    # Alternative: export GITHUB_APP_PRIVATE_KEY="<PEM content or base64-encoded PEM>"
+
+    # HTTP timeout in seconds.
+    timeout: 30             # default: 30
+
+  # ── GitHub (PAT authentication) ───────────────────────────────────
+  # github:
+  #   enabled: true
+  #   auth_method: pat
+  #   owner: my-org
+  #   repo: my-repo
+  #   token_env: GITHUB_TOKEN   # env var that holds the Personal Access Token
+  #   timeout: 30
+
+  # ── Multiple GitHub organisations ─────────────────────────────────
+  # Use any name as the key and set type: github.
+  # Rules reference providers by the key name.
+  #
+  # github-acme:
+  #   type: github
+  #   enabled: true
+  #   auth_method: pat
+  #   owner: acme-org
+  #   repo: backend
+  #   token_env: GITHUB_TOKEN_ACME
+  #
+  # github-skunkworks:
+  #   type: github
+  #   enabled: true
+  #   auth_method: pat
+  #   owner: skunkworks-org
+  #   repo: platform
+  #   token_env: GITHUB_TOKEN_SKUNKWORKS
+
+  # ── Bitbucket Cloud ───────────────────────────────────────────────
+  bitbucket:
+    enabled: true
+
+    # Bitbucket workspace slug.
+    workspace: my-workspace
+
+    # Repository slug.
+    repo_slug: my-repo
+
+    # Name of the environment variable that holds the Bearer token.
+    token_env: BITBUCKET_TOKEN   # default: BITBUCKET_TOKEN
+
+    # Delete source branch after the PR is merged.
+    close_source_branch: true    # default: true
+
+    # HTTP timeout in seconds.
+    timeout: 30             # default: 30
+
+# ──────────────────────────────────────────────────────────
+# Rules
+#
+# Each rule matches branches by regex and maps provider → destination branch.
+# The destination branch is automatically excluded from matching.
+# Multiple rules are processed in parallel.
+# ──────────────────────────────────────────────────────────
+
+rules:
+  # Match any branch starting with "feature/" and open PRs toward "main" on GitHub
+  # and "develop" on Bitbucket.
+  - pattern: "feature/.*"
+    destinations:
+      github: main
+      bitbucket: develop
+
+  # Match release branches and target "main" on GitHub only.
+  - pattern: "release/.*"
+    destinations:
+      github: main
+
+  # Match hotfix branches on Bitbucket only.
+  - pattern: ".*-hotfix-.*"
+    destinations:
+      bitbucket: master
+
+  # Example: multi-org rules (uncomment if using github-acme / github-skunkworks above)
+  # - pattern: "feature/.*"
+  #   destinations:
+  #     github-acme: main
+  #     github-skunkworks: develop
