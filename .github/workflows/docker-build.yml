@@ -1,7 +1,5 @@
 name: Build and Push Docker Image
 
-permissions: {}
-
 env:
   DOCKERHUB_USER: devopsiaci
   DOCKERHUB_REPO: pr-generator
