@@ -1,3 +1,11 @@
+## [1.0.1](https://github.com/devops-ia/pr-generator/compare/v1.0.0...v1.0.1) (2026-03-26)
+
+
+### Bug Fixes
+
+* Labels ([5f94ea5](https://github.com/devops-ia/pr-generator/commit/5f94ea57809ad5c2a33722bab82bf7fc10a05de1))
+* Labels ([b5bea89](https://github.com/devops-ia/pr-generator/commit/b5bea89a5476a59312b9df6f990a62ec7e9d6f6d))
+
 # 1.0.0 (2026-03-25)
 
 
