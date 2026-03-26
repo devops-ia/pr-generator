@@ -1,3 +1,10 @@
+## [1.0.2](https://github.com/devops-ia/pr-generator/compare/v1.0.1...v1.0.2) (2026-03-26)
+
+
+### Bug Fixes
+
+* replace version pin to sha ([777eb60](https://github.com/devops-ia/pr-generator/commit/777eb6050c7da25db589f9374aece8dab231e2c4))
+
 ## [1.0.1](https://github.com/devops-ia/pr-generator/compare/v1.0.0...v1.0.1) (2026-03-26)
 
 
