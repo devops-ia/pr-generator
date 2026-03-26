@@ -76,10 +76,10 @@ jobs:
             ${{ env.DOCKERHUB_USER }}/${{ env.DOCKERHUB_REPO }}
             ${{ env.GHCR_REGISTRY }}/${{ env.GHCR_REPO }}
           labels: |
-            org.opencontainers.image.maintainer=adrianmg231189@gmail.com
-            org.opencontainers.image.title=PR Generator
-            org.opencontainers.image.description=PR Generator to automate pull request management
-            org.opencontainers.image.vendor=devops-ia
+            org.opencontainers.image.maintainer=amartingarcia,ialejandro'
+            org.opencontainers.image.title='PR Generator'
+            org.opencontainers.image.description='PR Generator to automate pull request management'
+            org.opencontainers.image.vendor='devops-ia'
           tags: |
             type=raw,value=${{ steps.semantic.outputs.new_release_git_tag }}
 
