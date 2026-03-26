@@ -14,9 +14,7 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt && \
 # ============================================================
 FROM python:3.14-slim
 
-LABEL maintainer="adrianmg231189@gmail.com"
-LABEL org.opencontainers.image.source="https://github.com/devops-ia/pr-generator"
-LABEL org.opencontainers.image.description="Automated PR creation from branch patterns"
+LABEL maintainer="amartingarcia, ialejandro"
 
 # Non-root user
 RUN groupadd -r prgen && useradd -r -g prgen -d /app -s /sbin/nologin prgen
