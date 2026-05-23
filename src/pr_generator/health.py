@@ -1,4 +1,4 @@
-"""Health HTTP server exposing /livez, /readyz and /healthz endpoints."""
+"""Health HTTP server exposing /livez, /readyz, /healthz and /metrics endpoints."""
 
 from __future__ import annotations
 
@@ -6,21 +6,28 @@ import logging
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Event
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pr_generator.metrics import PrGeneratorMetrics
 
 logger = logging.getLogger("pr_generator.health")
 
 
 class _HealthHandler(BaseHTTPRequestHandler):
-    """Lightweight HTTP handler for Kubernetes health probes.
+    """Lightweight HTTP handler for Kubernetes health probes and metrics scraping.
 
     Endpoints:
       /livez, /healthz  → 200 while running; 503 when shutting down.
       /readyz           → 200 after the first full scan cycle; 503 before that.
+      /metrics          → 200 with Prometheus text exposition; 404 when metrics
+                          are not enabled (``metrics`` is ``None``).
     """
 
     # Injected by the server factory below
     stop_event: Event
     ready_event: Event
+    metrics: PrGeneratorMetrics | None
 
     def _write(self, code: int, body: str) -> None:
         self.send_response(code)
@@ -40,6 +47,17 @@ class _HealthHandler(BaseHTTPRequestHandler):
                 self._write(200, "ready")
             else:
                 self._write(503, "not ready")
+        elif self.path == "/metrics":
+            if self.metrics is not None:
+                from pr_generator.metrics import METRICS_CONTENT_TYPE  # noqa: PLC0415
+                body = self.metrics.generate_latest()
+                self.send_response(200)
+                self.send_header("Content-Type", METRICS_CONTENT_TYPE)
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                self._write(404, "metrics not enabled")
         else:
             self._write(404, "not found")
 
@@ -48,11 +66,24 @@ class _HealthHandler(BaseHTTPRequestHandler):
         pass
 
 
-def start_health_server(port: int, stop_event: Event) -> tuple[ThreadingHTTPServer, Event]:
+def start_health_server(
+    port: int,
+    stop_event: Event,
+    metrics: PrGeneratorMetrics | None = None,
+) -> tuple[ThreadingHTTPServer, Event]:
     """Start the health HTTP server in a daemon thread.
 
+    Args:
+        port: TCP port to listen on.
+        stop_event: Set this event to signal the server that the process is
+            shutting down.  ``/livez`` returns 503 once it is set.
+        metrics: Optional :class:`~pr_generator.metrics.PrGeneratorMetrics`
+            instance.  When provided, ``GET /metrics`` returns Prometheus text
+            output.  When ``None``, ``GET /metrics`` returns 404.
+
     Returns:
-        (server, ready_event) — set ready_event after the first successful cycle.
+        ``(server, ready_event)`` — set *ready_event* after the first
+        successful scan cycle to flip ``/readyz`` to 200.
     """
     ready_event = Event()
 
@@ -60,7 +91,7 @@ def start_health_server(port: int, stop_event: Event) -> tuple[ThreadingHTTPServ
     handler_cls = type(
         "_BoundHealthHandler",
         (_HealthHandler,),
-        {"stop_event": stop_event, "ready_event": ready_event},
+        {"stop_event": stop_event, "ready_event": ready_event, "metrics": metrics},
     )
 
     server = ThreadingHTTPServer(("0.0.0.0", port), handler_cls)

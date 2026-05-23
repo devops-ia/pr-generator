@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import TYPE_CHECKING
 
 from pr_generator.models import AppConfig, CycleResult, RuleResult, ScanRule
 from pr_generator.providers.base import ProviderInterface
+
+if TYPE_CHECKING:
+    from pr_generator.metrics import PrGeneratorMetrics
 
 logger = logging.getLogger("pr_generator.scanner")
 
@@ -17,15 +22,27 @@ def scan_cycle(
     config: AppConfig,
     providers: dict[str, ProviderInterface],
     cycle_id: int,
+    effective_rules: list[ScanRule] | None = None,
+    metrics: PrGeneratorMetrics | None = None,
 ) -> CycleResult:
     """Execute one full scan cycle.
 
     Phase 1: Fetch branches from every active provider concurrently.
     Phase 2: Process every rule×provider pair concurrently.
+
+    Args:
+        effective_rules: Override the rules from ``config``. Used by the main loop
+            in ``annotations_only`` and ``hybrid`` modes to pass the resolved rule
+            set for this cycle.  Falls back to ``config.rules`` when ``None``.
+        metrics: Optional :class:`~pr_generator.metrics.PrGeneratorMetrics`
+            instance.  When provided, :meth:`~pr_generator.metrics.PrGeneratorMetrics.record_cycle`
+            is called at the end of the cycle with the result and elapsed duration.
     """
+    t_start = time.monotonic()
+    rules = effective_rules if effective_rules is not None else config.rules
     logger.info(
         "[Core] Step: scan_cycle action=start cycle_id=%d rules=%d providers=%s",
-        cycle_id, len(config.rules), list(providers.keys()),
+        cycle_id, len(rules), list(providers.keys()),
     )
 
     # Reset per-cycle caches on all providers
@@ -55,7 +72,7 @@ def scan_cycle(
     task_futures = []
 
     with ThreadPoolExecutor(max_workers=_MAX_RULE_WORKERS) as pool:
-        for rule in config.rules:
+        for rule in rules:
             for prov_name, dest_branch in rule.destinations.items():
                 if prov_name not in providers:
                     logger.debug(
@@ -90,6 +107,10 @@ def scan_cycle(
         " created=%d skipped_existing=%d dry_run=%d errors=%d",
         cycle_id, total, created, skipped, simulated, errors,
     )
+
+    if metrics is not None:
+        metrics.record_cycle(result, duration=time.monotonic() - t_start)
+
     return result
 
 

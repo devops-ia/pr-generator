@@ -180,3 +180,55 @@ class TestScanCycle:
         result = scan_cycle(config, {"github": prov}, cycle_id=1)
         assert result is not None
         assert result.rule_results == []
+
+
+class TestScanCycleEffectiveRules:
+    """Tests for the effective_rules override parameter (annotation discovery)."""
+
+    def test_effective_rules_override_config_rules(self):
+        config_rule = ScanRule(
+            pattern="config-pattern/.*",
+            compiled=re.compile("config-pattern/.*"),
+            destinations={"github": "main"},
+        )
+        override_rule = ScanRule(
+            pattern="annotation-pattern/.*",
+            compiled=re.compile("annotation-pattern/.*"),
+            destinations={"github": "develop"},
+        )
+        prov = _mock_provider("github", ["annotation-pattern/x", "config-pattern/y"])
+        config = _make_config([config_rule], {"github": MagicMock()})
+
+        result = scan_cycle(config, {"github": prov}, cycle_id=1, effective_rules=[override_rule])
+
+        # Only annotation-pattern/x should be matched (override_rule is the only rule)
+        prov.create_pull_request.assert_called_once_with("annotation-pattern/x", "develop")
+        assert result.rule_results[0].created == 1
+
+    def test_none_effective_rules_falls_back_to_config_rules(self):
+        rule = ScanRule(
+            pattern="feature/.*",
+            compiled=re.compile("feature/.*"),
+            destinations={"github": "main"},
+        )
+        prov = _mock_provider("github", ["feature/x"])
+        config = _make_config([rule], {"github": MagicMock()})
+
+        result = scan_cycle(config, {"github": prov}, cycle_id=1, effective_rules=None)
+
+        prov.create_pull_request.assert_called_once_with("feature/x", "main")
+        assert result.rule_results[0].created == 1
+
+    def test_empty_effective_rules_creates_no_prs(self):
+        rule = ScanRule(
+            pattern="feature/.*",
+            compiled=re.compile("feature/.*"),
+            destinations={"github": "main"},
+        )
+        prov = _mock_provider("github", ["feature/x"])
+        config = _make_config([rule], {"github": MagicMock()})
+
+        result = scan_cycle(config, {"github": prov}, cycle_id=1, effective_rules=[])
+
+        prov.create_pull_request.assert_not_called()
+        assert result.rule_results == []

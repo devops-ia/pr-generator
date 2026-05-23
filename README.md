@@ -26,7 +26,9 @@ Automated Pull Request creation daemon for **GitHub** and **Bitbucket Cloud**.
   - [Bitbucket Cloud](#bitbucket-cloud)
 - [Rules](#rules)
 - [ArgoCD Image Updater integration](#argocd-image-updater-integration)
+- [Annotation-based discovery](#annotation-based-discovery)
 - [Health endpoints](#health-endpoints)
+- [Prometheus metrics](#prometheus-metrics)
 - [Docker](#docker)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
@@ -290,6 +292,64 @@ rules:
 
 ---
 
+## Annotation-based discovery
+
+Instead of a central `rules` list, each ArgoCD Application CR can carry annotations
+that define its own PR rules. `pr-generator` reads these annotations on every scan cycle
+— no restart or config change required.
+
+### Modes
+
+| Mode | Behaviour |
+|------|-----------|
+| `config_only` | Static rules from `config.yaml` only. No Kubernetes API access. **Default.** |
+| `annotations_only` | Rules come exclusively from annotated ArgoCD Applications. `rules:` is ignored at runtime. |
+| `hybrid` | Both sources active. Annotation destinations win on same pattern+provider collision. |
+
+### Annotation schema
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app
+  annotations:
+    pr-generator.io/enabled: "true"
+    pr-generator.io/pattern: "^image-updater/.*"
+    pr-generator.io/destination.github: "main"       # provider key → base branch
+    pr-generator.io/destination.bitbucket: "develop"
+```
+
+### config.yaml
+
+```yaml
+annotation_discovery:
+  mode: hybrid                    # config_only | annotations_only | hybrid
+  annotation_prefix: pr-generator.io   # default
+
+# rules: required when mode is config_only or hybrid; optional for annotations_only
+rules:
+  - pattern: "^hotfix/.*"
+    destinations:
+      github: main
+```
+
+### RBAC requirement
+
+Annotation discovery reads `applications.argoproj.io` cluster-wide. The Helm chart
+creates a `ClusterRole` and `ClusterRoleBinding` automatically when
+`annotationDiscovery.enabled: true`. For bare Docker/pip deployments, the pod's
+ServiceAccount needs:
+
+```yaml
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list"]
+```
+
+---
+
 ## Health endpoints
 
 A lightweight HTTP server starts on `health_port` (default `8080`):
@@ -299,6 +359,7 @@ A lightweight HTTP server starts on `health_port` (default `8080`):
 | `GET /livez` | `200 live` while running; `503 shutting down` during shutdown |
 | `GET /healthz` | Same as `/livez` (alias) |
 | `GET /readyz` | `200 ready` after the **first** scan cycle completes; `503 not ready` before that |
+| `GET /metrics` | Prometheus text exposition (see [Prometheus metrics](#prometheus-metrics)) |
 
 Suitable for Kubernetes liveness, readiness, and startup probes:
 
@@ -311,6 +372,58 @@ readinessProbe:
   httpGet:
     path: /readyz
     port: 8080
+```
+
+---
+
+## Prometheus metrics
+
+`pr-generator` exposes Prometheus metrics at `GET /metrics` on the health port (default `8080`).
+
+### Metrics reference
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `pr_generator_scan_cycles_total` | Counter | — | Scan cycles completed |
+| `pr_generator_scan_duration_seconds` | Histogram | — | Duration per cycle (buckets: .1, .5, 1, 5, 10, 30, 60 s) |
+| `pr_generator_last_scan_timestamp_seconds` | Gauge | — | Unix timestamp of last completed cycle |
+| `pr_generator_prs_created_total` | Counter | `provider` | PRs opened |
+| `pr_generator_prs_skipped_total` | Counter | `provider` | PRs skipped (already open) |
+| `pr_generator_prs_simulated_total` | Counter | `provider` | PRs simulated (`dry_run: true`) |
+| `pr_generator_scan_errors_total` | Counter | `provider` | Errors during branch fetch or PR creation |
+| `pr_generator_rules_active` | Gauge | — | Rules active in the current cycle |
+| `pr_generator_annotation_rules_discovered` | Gauge | — | Rules discovered from ArgoCD annotations in last cycle |
+
+The `provider` label value is the key name from `config.providers` (e.g. `github`, `my-bitbucket`).
+
+### Scraping
+
+```bash
+curl http://localhost:8080/metrics
+```
+
+### Helm chart — Prometheus Operator
+
+```yaml
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true          # creates ServiceMonitor CRD
+    interval: 30s
+    labels:
+      release: kube-prometheus-stack   # match your Operator's serviceMonitorSelector
+```
+
+### Programmatic API
+
+```python
+from prometheus_client import CollectorRegistry
+from pr_generator.metrics import PrGeneratorMetrics
+
+# Isolated registry (useful in tests)
+m = PrGeneratorMetrics(registry=CollectorRegistry())
+m.record_annotation_rules(3)
+print(m.generate_latest().decode())
 ```
 
 ---
@@ -367,18 +480,24 @@ src/pr_generator/
 ├── scanner.py           # Concurrent scan cycle orchestrator
 ├── health.py            # HTTP health server (/livez, /readyz, /healthz)
 ├── http_client.py       # Shared HTTP client with retry/backoff
+├── annotation_discovery.py  # Kubernetes annotation-based rule discovery
+├── config.py            # Config loader (YAML → AppConfig)
+├── health.py            # HTTP health + metrics server (/livez, /readyz, /metrics)
 ├── logging_config.py    # Logging setup (plain text or structured JSON)
+├── metrics.py           # Prometheus metrics (PrGeneratorMetrics)
 └── providers/
     ├── base.py          # ProviderInterface Protocol
     ├── github.py        # GitHub App provider
     └── bitbucket.py     # Bitbucket Cloud provider
 
 tests/
-├── conftest.py          # Shared pytest fixtures
-├── test_config.py       # Config loading tests
-├── test_health.py       # Health server tests
-├── test_models.py       # Model tests
-└── test_scanner.py      # Scan cycle tests
+├── conftest.py                  # Shared pytest fixtures
+├── test_annotation_discovery.py # Annotation discovery tests
+├── test_config.py               # Config loading tests
+├── test_health.py               # Health server tests
+├── test_metrics.py              # Prometheus metrics tests
+├── test_models.py               # Model tests
+└── test_scanner.py              # Scan cycle tests
 ```
 
 ---

@@ -49,6 +49,19 @@ There is no linter configured. There is no type-checker configured.
 
 **Releases** are automated via `semantic-release` on push to `main`. Version is in `src/pr_generator/__init__.py` and `pyproject.toml`.
 
+**Data models** live in `models.py` — all shared frozen dataclasses (`ProviderConfig`, `AppConfig`, `ScanRule`) and result types (`CycleResult`, `RuleResult`) are defined there. Import from `models.py`; do not define new dataclasses in provider or scanner files.
+
+**Health server** (`health.py`) exposes `/livez`, `/readyz`, `/healthz`, and `/metrics` in a `ThreadingHTTPServer` daemon thread. `/readyz` returns 503 until `ready_event` is set after the first full scan cycle. `/metrics` returns 404 when metrics are disabled.
+
+**Prometheus metrics** (`metrics.py`) are encapsulated in `PrGeneratorMetrics`. Production code uses the global `REGISTRY`; tests must pass a fresh `CollectorRegistry()` to each `PrGeneratorMetrics()` instance to prevent cross-test pollution. Never use bare `prometheus_client` globals in application code.
+
+**Annotation-based rule discovery** (`annotation_discovery.py`) reads ArgoCD `Application` resources cluster-wide via the Kubernetes API and extracts `ScanRule` objects from annotations. The opt-in annotation is `<prefix>/enabled: "true"` (default prefix `pr-generator.io`). Destination branches are set per provider key with `<prefix>/destination.<provider-key>: "<branch>"`. Three modes control how static config rules and annotation rules are combined:
+- `config_only` (default) — only rules from YAML config are used.
+- `annotations_only` — only rules from ArgoCD annotations are used.
+- `hybrid` — both sources are merged; annotation rules are appended after config rules.
+
+**Logging** (`logging_config.py`) supports `log_format: "text"` (default) and `log_format: "json"`. JSON format emits structured lines suitable for ELK/Loki. Configure via `AppConfig.log_format`; call `setup_logging(level, json_format=True/False)` once at startup.
+
 ---
 
 ## Key Conventions
@@ -93,6 +106,8 @@ To add a third provider (e.g. GitLab):
 - **Scanner tests** — mock full providers with `MagicMock()` (see `_mock_provider` helper in `test_scanner.py`).
 - **Provider tests** — mock `provider._request` directly, not `requests.request`.
 - **Config tests** — use `tmp_path` fixture + `monkeypatch.setenv("CONFIG_PATH", path)`.
+- **Metrics tests** — always pass a fresh `CollectorRegistry()` to `PrGeneratorMetrics(registry=...)` to isolate state between tests.
+- **Annotation tests** — mock `AnnotationDiscoveryClient._call_k8s_api` to avoid real cluster calls.
 - Tests are plain classes with descriptive method names; no pytest markers are used.
 
 ### Docker
