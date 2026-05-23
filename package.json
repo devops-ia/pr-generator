@@ -9,9 +9,15 @@
       "@semantic-release/release-notes-generator",
       "@semantic-release/changelog",
       [
+        "@semantic-release/exec",
+        {
+          "prepareCmd": "sed -i 's/^version = .*/version = \"${nextRelease.version}\"/' pyproject.toml && sed -i 's/__version__ = .*/__version__ = \"${nextRelease.version}\"/' src/pr_generator/__init__.py"
+        }
+      ],
+      [
         "@semantic-release/git",
         {
-          "assets": ["CHANGELOG.md"],
+          "assets": ["CHANGELOG.md", "pyproject.toml", "src/pr_generator/__init__.py"],
           "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
         }
       ],

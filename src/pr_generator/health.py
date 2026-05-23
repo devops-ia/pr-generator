@@ -94,7 +94,7 @@ def start_health_server(
         {"stop_event": stop_event, "ready_event": ready_event, "metrics": metrics},
     )
 
-    server = ThreadingHTTPServer(("0.0.0.0", port), handler_cls)
+    server = ThreadingHTTPServer(("0.0.0.0", port), handler_cls)  # nosec B104
     thread = threading.Thread(target=server.serve_forever, name="health-server", daemon=True)
     thread.start()
     logger.info("[Core] Step: health_server action=start port=%d", port)

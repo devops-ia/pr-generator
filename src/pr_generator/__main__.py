@@ -6,7 +6,8 @@ import argparse
 import logging
 import signal
 import sys
-from importlib.metadata import PackageNotFoundError, version as pkg_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as pkg_version
 from threading import Event
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,7 @@ from pr_generator.health import start_health_server
 from pr_generator.logging_config import setup_logging
 from pr_generator.metrics import PrGeneratorMetrics
 from pr_generator.models import ScanRule
+from pr_generator.providers.base import ProviderInterface
 from pr_generator.providers.bitbucket import BitbucketProvider
 from pr_generator.providers.github import GitHubProvider
 from pr_generator.scanner import scan_cycle
@@ -54,7 +56,7 @@ def main() -> None:
     setup_logging(config.log_level, json_format=(config.log_format == "json"))
 
     # Instantiate active providers
-    providers = {}
+    providers: dict[str, ProviderInterface] = {}
     for pname, pconf in config.providers.items():
         if not pconf.enabled:
             continue

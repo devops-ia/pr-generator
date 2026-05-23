@@ -69,7 +69,8 @@ class AnnotationDiscoveryClient:
                 e.g. missing ServiceAccount token or insufficient RBAC permissions.
         """
         try:
-            from kubernetes import client, config as k8s_config  # type: ignore[import]
+            from kubernetes import client
+            from kubernetes import config as k8s_config
             k8s_config.load_incluster_config()
             api = client.CustomObjectsApi()
         except Exception as exc:

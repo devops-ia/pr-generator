@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING
 
 from pr_generator.models import AppConfig, CycleResult, RuleResult, ScanRule
@@ -69,7 +69,7 @@ def scan_cycle(
 
     # Phase 2 — process rules × providers in parallel
     result = CycleResult(cycle_id=cycle_id)
-    task_futures = []
+    task_futures: list[Future[RuleResult]] = []
 
     with ThreadPoolExecutor(max_workers=_MAX_RULE_WORKERS) as pool:
         for rule in rules:
@@ -80,7 +80,7 @@ def scan_cycle(
                         rule.pattern, prov_name,
                     )
                     continue
-                task_futures.append(pool.submit(
+                task_future: Future[RuleResult] = pool.submit(
                     _process_rule,
                     provider=providers[prov_name],
                     branches=branches_by_provider.get(prov_name, []),
@@ -88,11 +88,12 @@ def scan_cycle(
                     dest_branch=dest_branch,
                     dry_run=config.dry_run,
                     cycle_id=cycle_id,
-                ))
+                )
+                task_futures.append(task_future)
 
-        for future in as_completed(task_futures):
+        for rule_future in as_completed(task_futures):
             try:
-                result.rule_results.append(future.result())
+                result.rule_results.append(rule_future.result())
             except Exception as exc:
                 logger.error("[Core] Step: process_rule action=error cycle_id=%d detail=%s", cycle_id, exc)
 

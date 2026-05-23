@@ -23,7 +23,15 @@ CONFIG_PATH=./config.yaml python -m pr_generator
 python -m pytest --cov=pr_generator --cov-report=term-missing
 ```
 
-There is no linter configured. There is no type-checker configured.
+Linters and static analysis (configured in `pyproject.toml`, installed via `requirements-dev.txt`):
+```bash
+ruff check src/          # PEP 8 + pyflakes + import order
+mypy src/ --ignore-missing-imports   # static type checking
+bandit -r src/ -ll -q    # security scan (medium+ severity)
+python -m pytest tests/ --cov=pr_generator --cov-report=term-missing  # tests + coverage
+```
+
+There is no formatter configured.
 
 ---
 
