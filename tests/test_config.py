@@ -927,3 +927,106 @@ class TestTokenEnvUniqueness:
         cfg = load_config()
         assert "bitbucket" in cfg.providers
         assert "bitbucket-disabled" not in cfg.providers
+
+
+class TestAnnotationDiscovery:
+    """Tests for annotation_discovery config parsing."""
+
+    def _base_config(self, tmp_path, extra_yaml: str = "") -> str:
+        return _write_config(tmp_path, f"""
+            providers:
+              bitbucket:
+                enabled: true
+                workspace: ws
+                repo_slug: rs
+                token_env: BB_ANNOT_TOKEN
+            rules:
+              - pattern: "feature/.*"
+                destinations:
+                  bitbucket: main
+            {extra_yaml}
+        """)
+
+    def test_defaults_to_config_only_mode(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("BB_ANNOT_TOKEN", "tok")
+        path = self._base_config(tmp_path)
+        monkeypatch.setenv("CONFIG_PATH", path)
+        from pr_generator.config import load_config
+        cfg = load_config()
+        assert cfg.annotation_mode == "config_only"
+        assert cfg.annotation_prefix == "pr-generator.io"
+
+    def test_hybrid_mode_parsed(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("BB_ANNOT_TOKEN", "tok")
+        path = self._base_config(tmp_path, """
+            annotation_discovery:
+              mode: hybrid
+              annotation_prefix: "my-tool.io"
+        """)
+        monkeypatch.setenv("CONFIG_PATH", path)
+        from pr_generator.config import load_config
+        cfg = load_config()
+        assert cfg.annotation_mode == "hybrid"
+        assert cfg.annotation_prefix == "my-tool.io"
+
+    def test_annotations_only_mode_no_rules_ok(self, tmp_path, monkeypatch):
+        """Empty rules should not raise when mode is annotations_only."""
+        monkeypatch.setenv("BB_ANNOT_TOKEN", "tok")
+        path = _write_config(tmp_path, """
+            providers:
+              bitbucket:
+                enabled: true
+                workspace: ws
+                repo_slug: rs
+                token_env: BB_ANNOT_TOKEN
+            rules: []
+            annotation_discovery:
+              mode: annotations_only
+        """)
+        monkeypatch.setenv("CONFIG_PATH", path)
+        from pr_generator.config import load_config
+        cfg = load_config()
+        assert cfg.annotation_mode == "annotations_only"
+        assert cfg.rules == []
+
+    def test_hybrid_mode_no_rules_ok(self, tmp_path, monkeypatch):
+        """Empty rules should not raise when mode is hybrid."""
+        monkeypatch.setenv("BB_ANNOT_TOKEN", "tok")
+        path = _write_config(tmp_path, """
+            providers:
+              bitbucket:
+                enabled: true
+                workspace: ws
+                repo_slug: rs
+                token_env: BB_ANNOT_TOKEN
+            rules: []
+            annotation_discovery:
+              mode: hybrid
+        """)
+        monkeypatch.setenv("CONFIG_PATH", path)
+        from pr_generator.config import load_config
+        cfg = load_config()
+        assert cfg.annotation_mode == "hybrid"
+
+    def test_invalid_mode_raises(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("BB_ANNOT_TOKEN", "tok")
+        path = self._base_config(tmp_path, """
+            annotation_discovery:
+              mode: invalid_mode
+        """)
+        monkeypatch.setenv("CONFIG_PATH", path)
+        from pr_generator.config import load_config
+        with pytest.raises(ValueError, match="invalid_mode"):
+            load_config()
+
+    def test_prefix_trailing_slash_stripped(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("BB_ANNOT_TOKEN", "tok")
+        path = self._base_config(tmp_path, """
+            annotation_discovery:
+              mode: hybrid
+              annotation_prefix: "my-tool.io/"
+        """)
+        monkeypatch.setenv("CONFIG_PATH", path)
+        from pr_generator.config import load_config
+        cfg = load_config()
+        assert cfg.annotation_prefix == "my-tool.io"

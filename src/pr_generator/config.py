@@ -9,7 +9,7 @@ import re
 
 import yaml
 
-from pr_generator.models import AppConfig, ProviderConfig, ScanRule
+from pr_generator.models import AnnotationMode, AppConfig, ProviderConfig, ScanRule
 
 logger = logging.getLogger("pr_generator.config")
 
@@ -43,9 +43,15 @@ def _load_from_file(path: str) -> AppConfig:
     raw = raw or {}
     providers = _parse_providers_from_yaml(raw.get("providers") or {})
     rules = _parse_rules(raw.get("rules") or [])
+    annotation_mode, annotation_prefix = _parse_annotation_discovery(raw.get("annotation_discovery") or {})
 
     if not rules:
-        raise ValueError("[Core] config.yaml has no rules defined.")
+        if annotation_mode == "config_only":
+            raise ValueError("[Core] config.yaml has no rules defined.")
+        logger.info(
+            "[Core] Step: load_config action=warn detail=no static rules; "
+            "annotation_mode=%s will supply rules at runtime", annotation_mode,
+        )
     if not providers:
         logger.info("[Core] Step: load_config action=warn detail=no enabled providers configured; running in idle mode")
 
@@ -57,10 +63,12 @@ def _load_from_file(path: str) -> AppConfig:
         health_port=int(raw.get("health_port", 8080)),
         providers=providers,
         rules=rules,
+        annotation_mode=annotation_mode,
+        annotation_prefix=annotation_prefix,
     )
     logger.info(
-        "[Core] Step: load_config action=end source=file providers=%s rules=%d",
-        list(providers.keys()), len(rules),
+        "[Core] Step: load_config action=end source=file providers=%s rules=%d annotation_mode=%s",
+        list(providers.keys()), len(rules), annotation_mode,
     )
     return config
 
@@ -270,4 +278,32 @@ def _parse_rules(raw_rules: list) -> list[ScanRule]:
             continue
         rules.append(ScanRule(pattern=pattern, compiled=compiled, destinations=destinations))
     return rules
+
+
+_VALID_ANNOTATION_MODES: frozenset[str] = frozenset({"config_only", "annotations_only", "hybrid"})
+
+
+def _parse_annotation_discovery(raw: dict) -> tuple[AnnotationMode, str]:
+    """Parse the ``annotation_discovery`` section of config.yaml.
+
+    Args:
+        raw: Parsed YAML dict for the ``annotation_discovery`` key.
+            May be empty; all fields have safe defaults.
+
+    Returns:
+        A ``(annotation_mode, annotation_prefix)`` tuple.
+        Defaults to ``("config_only", "pr-generator.io")`` when the section
+        is absent or empty.
+
+    Raises:
+        ValueError: When ``mode`` is not one of the accepted values.
+    """
+    mode = str(raw.get("mode", "config_only")).lower()
+    if mode not in _VALID_ANNOTATION_MODES:
+        raise ValueError(
+            f"[Core] annotation_discovery.mode '{mode}' is invalid. "
+            f"Valid values: {sorted(_VALID_ANNOTATION_MODES)}."
+        )
+    prefix = str(raw.get("annotation_prefix", "pr-generator.io")).strip().rstrip("/")
+    return mode, prefix  # type: ignore[return-value]  # narrowed by membership check above
 

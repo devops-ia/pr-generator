@@ -488,8 +488,6 @@
         <button class="copy-btn" id="copy-hero" aria-label="Copy Docker run command">Copy</button>
       </div>
       <pre id="hero-code"><span class="prompt">$ </span><span class="cmd">docker</span> <span class="arg">run</span> \
-    <span class="arg">-e</span> <span class="val">GITHUB_APP_ID</span>=123456 \
-    <span class="arg">-e</span> <span class="val">GITHUB_INSTALLATION_ID</span>=78901234 \
     <span class="arg">-e</span> <span class="val">GITHUB_APP_PRIVATE_KEY</span>="$(cat github-app.pem)" \
     <span class="arg">-v</span> <span class="val">./config.yaml</span>:/etc/pr-generator/config.yaml \
     ghcr.io/devops-ia/pr-generator:latest</pre>
@@ -550,7 +548,7 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         </div>
         <h3>Health endpoint</h3>
-        <p>Built-in HTTP server exposes <code>GET /health</code> for liveness probes. No extra dependencies required.</p>
+        <p>Built-in HTTP server exposes <code>/livez</code> and <code>/healthz</code> (liveness) and <code>/readyz</code> (ready after first scan). No extra dependencies.</p>
       </div>
 
       <div class="feature-card">
@@ -558,7 +556,7 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         </div>
         <h3>Configurable scan frequency</h3>
-        <p>Set <code>scan_frequency</code> to control how often branches are polled. Defaults to 60 seconds.</p>
+        <p>Set <code>scan_frequency</code> to control how often branches are polled. Defaults to 300 seconds.</p>
       </div>
 
       <div class="feature-card">
@@ -567,6 +565,22 @@
         </div>
         <h3>Kubernetes-native</h3>
         <p>Official <a href="https://devops-ia.github.io/helm-pr-generator/">Helm chart</a> with ServiceAccount, PDB, startup probe, and security-hardened pod spec.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg>
+        </div>
+        <h3>Annotation-based discovery</h3>
+        <p>Let each ArgoCD Application declare its own PR rules via annotations — no central config change needed. Three modes: <code>config_only</code>, <code>annotations_only</code>, <code>hybrid</code>.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><polyline points="18 17 13 12 9 16 5 12"/></svg>
+        </div>
+        <h3>Prometheus metrics</h3>
+        <p>Built-in <code>/metrics</code> endpoint with counters, histograms, and gauges for PRs, scan cycles, errors, and annotation rules. Pod annotations and ServiceMonitor included.</p>
       </div>
 
     </div>
@@ -592,18 +606,11 @@
     <span class="key">volumes</span>:
       - <span class="str">./config.yaml:/etc/pr-generator/config.yaml:ro</span>
     <span class="key">environment</span>:
-      <span class="key">GITHUB_APP_ID</span>: <span class="str">"123456"</span>
-      <span class="key">GITHUB_INSTALLATION_ID</span>: <span class="str">"78901234"</span>
-    <span class="key">secrets</span>:
-      - <span class="str">github_pem</span>
+      <span class="key">GITHUB_APP_PRIVATE_KEY</span>: <span class="str">"$(cat github-app.pem)"</span>
     <span class="key">healthcheck</span>:
-      <span class="key">test</span>: [<span class="str">"CMD"</span>, <span class="str">"wget"</span>, <span class="str">"-qO-"</span>, <span class="str">"http://localhost:8080/health"</span>]
+      <span class="key">test</span>: [<span class="str">"CMD"</span>, <span class="str">"wget"</span>, <span class="str">"-qO-"</span>, <span class="str">"http://localhost:8080/livez"</span>]
       <span class="key">interval</span>: <span class="str">30s</span>
-      <span class="key">retries</span>: <span class="str">3</span>
-
-<span class="key">secrets</span>:
-  <span class="key">github_pem</span>:
-    <span class="key">file</span>: <span class="str">./github-app.pem</span></pre>
+      <span class="key">retries</span>: <span class="str">3</span></pre>
     </div>
 
     <div class="code-block" role="region" aria-label="pip install">
@@ -647,7 +654,7 @@
         <span>config.yaml &mdash; GitHub App + Bitbucket</span>
         <button class="copy-btn" id="copy-config" aria-label="Copy full config">Copy</button>
       </div>
-      <pre id="code-config"><span class="key">scan_frequency</span>: <span class="str">60</span>          <span class="comment"># seconds between scan cycles</span>
+      <pre id="code-config"><span class="key">scan_frequency</span>: <span class="str">300</span>         <span class="comment"># seconds between scan cycles</span>
 <span class="key">dry_run</span>: <span class="str">false</span>                <span class="comment"># set true to simulate without creating PRs</span>
 
 <span class="key">providers</span>:
@@ -656,7 +663,7 @@
     <span class="key">owner</span>: <span class="str">my-org</span>
     <span class="key">repo</span>: <span class="str">my-app</span>
     <span class="key">auth_method</span>: <span class="str">app</span>           <span class="comment"># "app" (PEM) or "pat" (token)</span>
-    <span class="key">app_id</span>: <span class="str">"123456"</span>           <span class="comment"># from env: GITHUB_APP_ID</span>
+    <span class="key">app_id</span>: <span class="str">"123456"</span>
     <span class="key">installation_id</span>: <span class="str">"78901234"</span>
     <span class="key">private_key_path</span>: <span class="str">/secrets/github.pem</span>  <span class="comment"># or use GITHUB_APP_PRIVATE_KEY env</span>
 
@@ -667,13 +674,10 @@
     <span class="key">token_env</span>: <span class="str">BITBUCKET_TOKEN</span>   <span class="comment"># env var holding the access token</span>
 
 <span class="key">rules</span>:
-  - <span class="key">name</span>: <span class="str">image-updater-prs</span>
-    <span class="key">branch_pattern</span>: <span class="str">"^image-updater/.*"</span>
+  - <span class="key">pattern</span>: <span class="str">"^image-updater/.*"</span>
     <span class="key">destinations</span>:
-      - <span class="key">provider</span>: <span class="str">github</span>
-        <span class="key">base</span>: <span class="str">main</span>
-      - <span class="key">provider</span>: <span class="str">bitbucket</span>
-        <span class="key">base</span>: <span class="str">main</span></pre>
+      <span class="key">github</span>: <span class="str">main</span>
+      <span class="key">bitbucket</span>: <span class="str">main</span></pre>
     </div>
 
     <div class="callout">
@@ -713,11 +717,120 @@
         <button class="copy-btn" id="copy-argocd-rule" aria-label="Copy rule config">Copy</button>
       </div>
       <pre id="code-argocd-rule"><span class="key">rules</span>:
-  - <span class="key">name</span>: <span class="str">image-updater-prs</span>
-    <span class="key">branch_pattern</span>: <span class="str">"^image-updater/.*"</span>
+  - <span class="key">pattern</span>: <span class="str">"^image-updater/.*"</span>
     <span class="key">destinations</span>:
-      - <span class="key">provider</span>: <span class="str">github</span>
-        <span class="key">base</span>: <span class="str">main</span></pre>
+      <span class="key">github</span>: <span class="str">main</span></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ── Annotation Discovery ───────────────────────────────── -->
+<section aria-labelledby="annotation-title">
+  <div class="container">
+    <p class="section-label">Annotation-based discovery</p>
+    <h2 class="section-title" id="annotation-title">Per-app rules via annotations</h2>
+    <p class="section-desc">
+      Instead of a central <code>rules</code> list, each ArgoCD Application can declare its own PR rules
+      via annotations. No config reload or restart needed — rules are discovered on every scan cycle.
+      Three modes: <code>config_only</code> (default, existing behavior), <code>annotations_only</code>,
+      and <code>hybrid</code> (static rules + annotations merged, annotation wins on collision).
+    </p>
+
+    <div class="code-block" role="region" aria-label="ArgoCD Application with pr-generator annotations">
+      <div class="code-block-header">
+        <span>argocd Application &mdash; annotation schema</span>
+        <button class="copy-btn" id="copy-ann-app" aria-label="Copy annotation schema">Copy</button>
+      </div>
+      <pre id="code-ann-app"><span class="key">apiVersion</span>: <span class="str">argoproj.io/v1alpha1</span>
+<span class="key">kind</span>: <span class="str">Application</span>
+<span class="key">metadata</span>:
+  <span class="key">name</span>: <span class="str">my-app</span>
+  <span class="key">annotations</span>:
+    <span class="key">pr-generator.io/enabled</span>: <span class="str">"true"</span>
+    <span class="key">pr-generator.io/pattern</span>: <span class="str">"^image-updater/.*"</span>
+    <span class="key">pr-generator.io/destination.github</span>: <span class="str">"main"</span>
+    <span class="key">pr-generator.io/destination.bitbucket</span>: <span class="str">"develop"</span></pre>
+    </div>
+
+    <div class="code-block" role="region" aria-label="annotation_discovery config block">
+      <div class="code-block-header">
+        <span>config.yaml &mdash; enable annotation discovery</span>
+        <button class="copy-btn" id="copy-ann-config" aria-label="Copy annotation discovery config">Copy</button>
+      </div>
+      <pre id="code-ann-config"><span class="key">annotation_discovery</span>:
+  <span class="key">mode</span>: <span class="str">hybrid</span>               <span class="comment"># config_only | annotations_only | hybrid</span>
+  <span class="key">annotation_prefix</span>: <span class="str">pr-generator.io</span>  <span class="comment"># default prefix</span>
+
+<span class="comment"># rules: still required when mode is config_only or hybrid</span>
+<span class="key">rules</span>:
+  - <span class="key">pattern</span>: <span class="str">"^hotfix/.*"</span>
+    <span class="key">destinations</span>:
+      <span class="key">github</span>: <span class="str">main</span></pre>
+    </div>
+
+    <div class="callout">
+      <strong>RBAC:</strong> Annotation discovery requires a ClusterRole to <code>get</code> and <code>list</code>
+      <code>applications.argoproj.io</code> cluster-wide. The Helm chart creates this automatically when
+      <code>annotationDiscovery.enabled: true</code>.
+    </div>
+  </div>
+</section>
+
+<!-- ── Prometheus Metrics ─────────────────────────────────── -->
+<section aria-labelledby="metrics-title">
+  <div class="container">
+    <p class="section-label">Observability</p>
+    <h2 class="section-title" id="metrics-title">Prometheus metrics</h2>
+    <p class="section-desc">
+      <code>GET /metrics</code> on the health port (8080) exposes Prometheus text format.
+      Works with plain Prometheus (pod annotations) and Prometheus Operator (ServiceMonitor).
+    </p>
+
+    <div class="code-block" role="region" aria-label="curl metrics">
+      <div class="code-block-header">
+        <span>bash &mdash; scrape manually</span>
+        <button class="copy-btn" id="copy-metrics-curl" aria-label="Copy curl command">Copy</button>
+      </div>
+      <pre id="code-metrics-curl"><span class="prompt">$ </span><span class="cmd">curl</span> http://localhost:8080/metrics
+<span class="comment"># HELP pr_generator_scan_cycles_total Total number of scan cycles completed.</span>
+<span class="comment"># TYPE pr_generator_scan_cycles_total counter</span>
+<span class="key">pr_generator_scan_cycles_total</span> <span class="str">42.0</span>
+<span class="comment"># HELP pr_generator_prs_created_total Total PRs opened, labelled by provider.</span>
+<span class="comment"># TYPE pr_generator_prs_created_total counter</span>
+<span class="key">pr_generator_prs_created_total</span>{<span class="val">provider</span>=<span class="str">"github"</span>} <span class="str">7.0</span></pre>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Metric</th><th>Type</th><th>Labels</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>pr_generator_scan_cycles_total</code></td><td><span class="val-type">counter</span></td><td>—</td><td>Scan cycles completed</td></tr>
+          <tr><td><code>pr_generator_scan_duration_seconds</code></td><td><span class="val-type">histogram</span></td><td>—</td><td>Duration per cycle</td></tr>
+          <tr><td><code>pr_generator_last_scan_timestamp_seconds</code></td><td><span class="val-type">gauge</span></td><td>—</td><td>Unix timestamp of last cycle</td></tr>
+          <tr><td><code>pr_generator_prs_created_total</code></td><td><span class="val-type">counter</span></td><td><code>provider</code></td><td>PRs opened</td></tr>
+          <tr><td><code>pr_generator_prs_skipped_total</code></td><td><span class="val-type">counter</span></td><td><code>provider</code></td><td>PRs skipped (already open)</td></tr>
+          <tr><td><code>pr_generator_prs_simulated_total</code></td><td><span class="val-type">counter</span></td><td><code>provider</code></td><td>PRs simulated in dry-run</td></tr>
+          <tr><td><code>pr_generator_scan_errors_total</code></td><td><span class="val-type">counter</span></td><td><code>provider</code></td><td>Errors during scan</td></tr>
+          <tr><td><code>pr_generator_rules_active</code></td><td><span class="val-type">gauge</span></td><td>—</td><td>Rules active in current cycle</td></tr>
+          <tr><td><code>pr_generator_annotation_rules_discovered</code></td><td><span class="val-type">gauge</span></td><td>—</td><td>Rules from ArgoCD annotations</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="code-block" role="region" aria-label="Helm ServiceMonitor config">
+      <div class="code-block-header">
+        <span>Helm values &mdash; Prometheus Operator</span>
+        <button class="copy-btn" id="copy-metrics-helm" aria-label="Copy Helm metrics values">Copy</button>
+      </div>
+      <pre id="code-metrics-helm"><span class="key">metrics</span>:
+  <span class="key">enabled</span>: <span class="str">true</span>
+  <span class="key">serviceMonitor</span>:
+    <span class="key">enabled</span>: <span class="str">true</span>
+    <span class="key">interval</span>: <span class="str">30s</span>
+    <span class="key">labels</span>:
+      <span class="key">release</span>: <span class="str">kube-prometheus-stack</span>  <span class="comment"># match your Operator's selector</span></pre>
     </div>
   </div>
 </section>
@@ -769,24 +882,24 @@
             <td><span class="val-type">str</span></td>
           </tr>
           <tr>
-            <td><code>rules[].branch_pattern</code></td>
+            <td><code>rules[].pattern</code></td>
             <td>Python regex matched against each branch name.</td>
             <td><span class="val-type">regex</span></td>
           </tr>
           <tr>
-            <td><code>rules[].destinations[].base</code></td>
-            <td>Base branch the PR targets.</td>
+            <td><code>rules[].destinations</code></td>
+            <td>Map of provider name to base branch (e.g. <code>github: main</code>).</td>
+            <td><span class="val-type">map</span></td>
+          </tr>
+          <tr>
+            <td><code>annotation_discovery.mode</code></td>
+            <td><code>config_only</code> (default), <code>annotations_only</code>, or <code>hybrid</code>.</td>
             <td><span class="val-type">str</span></td>
           </tr>
           <tr>
-            <td><code>GITHUB_APP_ID</code></td>
-            <td>GitHub App numeric ID (alternative to inline <code>app_id</code>).</td>
-            <td><span class="val-type">env</span></td>
-          </tr>
-          <tr>
-            <td><code>GITHUB_INSTALLATION_ID</code></td>
-            <td>GitHub App installation ID.</td>
-            <td><span class="val-type">env</span></td>
+            <td><code>annotation_discovery.annotation_prefix</code></td>
+            <td>Annotation key prefix to watch on ArgoCD Applications. Default: <code>pr-generator.io</code>.</td>
+            <td><span class="val-type">str</span></td>
           </tr>
           <tr>
             <td><code>GITHUB_APP_PRIVATE_KEY</code></td>
@@ -906,6 +1019,10 @@
   attachCopy('copy-config',      'code-config');
   attachCopy('copy-argocd',      'code-argocd');
   attachCopy('copy-argocd-rule', 'code-argocd-rule');
+  attachCopy('copy-ann-app',     'code-ann-app');
+  attachCopy('copy-ann-config',  'code-ann-config');
+  attachCopy('copy-metrics-curl','code-metrics-curl');
+  attachCopy('copy-metrics-helm','code-metrics-helm');
 </script>
 
 </body>

@@ -118,7 +118,7 @@ class BitbucketProvider:
             "reviewers": reviewers,
             "close_source_branch": self._close_source_branch,
         }
-        resp = self._request("POST", f"{self._api_url}/pullrequests", json=payload)
+        self._request("POST", f"{self._api_url}/pullrequests", json=payload)
         self._pr_cache[(source, destination)] = True
         self._logger.info(
             "[%s] Step: create_pull_request action=end source=%s dest=%s status=created",

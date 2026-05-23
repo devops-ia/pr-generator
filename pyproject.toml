@@ -12,6 +12,8 @@ dependencies = [
     "PyJWT[crypto]==2.13.0",
     "cryptography==48.0.0",
     "pyyaml==6.0.3",
+    "kubernetes>=29.0.0",
+    "prometheus-client>=0.21.0",
 ]
 
 [project.scripts]
@@ -32,3 +34,18 @@ exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",
 ]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+strict = false
+warn_unused_ignores = true
+warn_return_any = false

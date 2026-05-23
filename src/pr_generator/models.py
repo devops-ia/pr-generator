@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -30,12 +31,15 @@ class ProviderConfig:
     close_source_branch: bool = True
 
 
+AnnotationMode = Literal["config_only", "annotations_only", "hybrid"]
+
+
 @dataclass
 class ScanRule:
     """A scanning rule: one regex pattern and its destination branch per provider."""
 
     pattern: str
-    compiled: re.Pattern
+    compiled: re.Pattern[str]
     destinations: dict[str, str] = field(default_factory=dict)
     # e.g. {"github": "develop", "bitbucket": "nonpro"}
 
@@ -51,6 +55,9 @@ class AppConfig:
     health_port: int
     providers: dict[str, ProviderConfig]   # "github" | "bitbucket" → ProviderConfig
     rules: list[ScanRule]
+    # Annotation-based discovery (ArgoCD Application annotations)
+    annotation_mode: AnnotationMode = "config_only"
+    annotation_prefix: str = "pr-generator.io"
 
 
 @dataclass

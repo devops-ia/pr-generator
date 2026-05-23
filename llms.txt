@@ -88,6 +88,10 @@ rules:
   - pattern: ".*-hotfix-.*"
     destinations:
       bitbucket: master
+
+annotation_discovery:              # optional — annotation-based rule discovery
+  mode: config_only                # config_only | annotations_only | hybrid
+  annotation_prefix: pr-generator.io
 ```
 
 ## GitHub PAT Authentication
@@ -239,6 +243,9 @@ curl http://localhost:8080/readyz
 
 # Healthz — alias for /livez
 curl http://localhost:8080/healthz
+
+# Prometheus metrics
+curl http://localhost:8080/metrics
 ```
 
 Kubernetes probe configuration:
@@ -258,6 +265,48 @@ readinessProbe:
   initialDelaySeconds: 10
   periodSeconds: 10
 ```
+
+## Annotation-based Rule Discovery
+
+Each ArgoCD Application can carry annotations that define its own PR rules.
+Rules are re-read on every scan cycle — no restart required.
+
+Annotation schema (default prefix `pr-generator.io`):
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app
+  annotations:
+    pr-generator.io/enabled: "true"
+    pr-generator.io/pattern: "^image-updater/.*"
+    pr-generator.io/destination.github: "main"
+    pr-generator.io/destination.bitbucket: "develop"
+```
+
+Modes:
+- `config_only` — static rules only, no Kubernetes API access (default)
+- `annotations_only` — rules from annotations only; `rules:` ignored at runtime
+- `hybrid` — both sources; annotation destinations win on collision
+
+Requires a ClusterRole with `get`/`list` on `applications.argoproj.io`.
+
+## Prometheus Metrics
+
+Exposed at `GET /metrics` on the health port.
+
+| Metric | Type | Labels |
+|--------|------|--------|
+| `pr_generator_scan_cycles_total` | Counter | — |
+| `pr_generator_scan_duration_seconds` | Histogram | — |
+| `pr_generator_last_scan_timestamp_seconds` | Gauge | — |
+| `pr_generator_prs_created_total` | Counter | `provider` |
+| `pr_generator_prs_skipped_total` | Counter | `provider` |
+| `pr_generator_prs_simulated_total` | Counter | `provider` |
+| `pr_generator_scan_errors_total` | Counter | `provider` |
+| `pr_generator_rules_active` | Gauge | — |
+| `pr_generator_annotation_rules_discovered` | Gauge | — |
 
 ## Programmatic API — Load Config
 
@@ -381,9 +430,11 @@ for r in result.rule_results:
 ```python
 from threading import Event
 from pr_generator.health import start_health_server
+from pr_generator.metrics import PrGeneratorMetrics
 
 stop_event = Event()
-server, ready_event = start_health_server(port=8080, stop_event=stop_event)
+metrics = PrGeneratorMetrics()   # optional — omit to disable /metrics
+server, ready_event = start_health_server(port=8080, stop_event=stop_event, metrics=metrics)
 
 # After first successful scan cycle:
 ready_event.set()    # /readyz starts returning 200
