@@ -19,14 +19,17 @@ Automated Pull Request creation daemon for **GitHub** and **Bitbucket Cloud**.
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
   - [YAML file](#yaml-file)
+  - [Environment variables](#environment-variables)
 - [Providers](#providers)
   - [GitHub — App authentication](#github--app-authentication)
   - [GitHub — PAT authentication](#github--pat-authentication)
   - [Bitbucket Cloud](#bitbucket-cloud)
 - [Rules](#rules)
+- [ArgoCD Image Updater integration](#argocd-image-updater-integration)
 - [Health endpoints](#health-endpoints)
 - [Docker](#docker)
 - [Development](#development)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -186,13 +189,25 @@ rules:
 | `providers.<name>.installation_id` | string | *(auto)* | Installation ID; resolved automatically if omitted *(GitHub App auth)* |
 | `providers.<name>.private_key_path` | string | — | Path to GitHub App private key PEM file *(GitHub App auth)* |
 | `providers.<name>.auth_method` | string | `"app"` | `app` (GitHub App) or `pat` (Personal Access Token) *(GitHub only)* |
-| `providers.<name>.token_env` | string | `"GITHUB_TOKEN"` / `"BITBUCKET_TOKEN"` | Env var name containing the token *(PAT / Bitbucket)* |
+| `providers.<name>.token_env` | string | `"GITHUB_TOKEN"` / `"BITBUCKET_TOKEN"` | Env var name containing the token *(PAT / Bitbucket)*. Must be **unique** across all enabled providers of the same type — duplicate values raise a `ValueError` at startup |
 | `providers.<name>.workspace` | string | — | Bitbucket workspace slug *(Bitbucket only)* |
 | `providers.<name>.repo_slug` | string | — | Bitbucket repository slug *(Bitbucket only)* |
 | `providers.<name>.close_source_branch` | bool | `true` | Delete source branch after PR merges *(Bitbucket only)* |
 | `providers.<name>.timeout` | float | `30` | HTTP timeout (seconds) |
 | `rules[].pattern` | string | — | Python regex applied to branch names |
 | `rules[].destinations` | map | — | `provider_name: destination_branch` pairs |
+
+---
+
+## Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `CONFIG_PATH` | Path to the YAML config file. Default: `/etc/pr-generator/config.yaml` |
+| `GITHUB_APP_PRIVATE_KEY` | GitHub App PEM key (plain text or base64-encoded). Used **only** when `private_key_path` is absent or empty in config — if `private_key_path` is set but the file does not exist, the application raises `FileNotFoundError` without falling back to this variable |
+| `GITHUB_TOKEN` | Default token env var for GitHub PAT providers (`token_env: GITHUB_TOKEN`) |
+| `BITBUCKET_TOKEN` | Default token env var for Bitbucket providers (`token_env: BITBUCKET_TOKEN`) |
+| *any name* | Custom env var referenced by `token_env` in provider config |
 
 ---
 
@@ -238,6 +253,40 @@ rules:
 ```
 
 Multiple rules are supported.
+
+---
+
+## ArgoCD Image Updater integration
+
+`pr-generator` pairs naturally with [Argo CD Image Updater](https://argocd-image-updater.readthedocs.io/).
+Image Updater creates branches named `argocd-image-updater-set-<app>-<env>-<image>`.
+Configure rules to catch those branches and open PRs toward the appropriate target branch per environment.
+
+```yaml
+scan_frequency: 120
+
+providers:
+  github:
+    enabled: true
+    owner: my-org
+    repo: gitops-repo
+    auth_method: app
+    app_id: "123456"
+    private_key_path: /secrets/github-app.pem
+
+rules:
+  - pattern: "argocd-image-updater-.*-dev-.*"
+    destinations:
+      github: develop
+
+  - pattern: "argocd-image-updater-.*-staging-.*"
+    destinations:
+      github: staging
+
+  - pattern: "argocd-image-updater-.*-pro-.*"
+    destinations:
+      github: main
+```
 
 ---
 
@@ -331,3 +380,50 @@ tests/
 ├── test_models.py       # Model tests
 └── test_scanner.py      # Scan cycle tests
 ```
+
+---
+
+## Troubleshooting
+
+### Application exits with `FileNotFoundError`
+
+```
+FileNotFoundError: [Core] private_key_path '/secrets/github-app.pem' does not exist.
+```
+
+`private_key_path` is set in `config.yaml` but the file is not present at that path.
+Either mount the PEM file at the configured path, or remove `private_key_path` from
+the config and set the `GITHUB_APP_PRIVATE_KEY` environment variable instead.
+
+### `ValueError: duplicate tokenEnv`
+
+```
+ValueError: [Core] Providers 'bb-eu' and 'bb-us' both use tokenEnv 'BITBUCKET_TOKEN'.
+```
+
+Two enabled providers of the same type share the same `token_env` value. Assign a
+unique env var name to each provider and export the corresponding variable in your
+runtime environment.
+
+### `/readyz` returns `503`
+
+This is expected during startup. The endpoint returns `503 not ready` until the first
+full scan cycle completes. If it never flips to `200`, check the application logs for
+errors in the scan cycle (API auth failures, missing config fields, network issues).
+
+### No PRs are created (dry_run is false, branches exist)
+
+1. **Regex anchoring** — rules use `re.match`, which is anchored at the start of the
+   string. A pattern `feature/.*` will **not** match `hotfix/feature/x`. Enable
+   `log_level: DEBUG` to see per-branch matching decisions.
+2. **Provider name mismatch** — the name in `rules[].destinations` must exactly match
+   the provider key under `providers:`.
+3. **Destination branch excluded** — pr-generator skips branches whose name equals the
+   destination branch to avoid self-targeting PRs.
+
+### GitHub App: `RuntimeError: Could not resolve installation id`
+
+Set `installation_id` explicitly in the provider config (find it in your GitHub App
+settings under _Installations_), or ensure the GitHub App is installed on the target
+repository.
+

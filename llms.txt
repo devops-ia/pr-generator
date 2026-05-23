@@ -1,0 +1,473 @@
+# pr-generator
+
+> Automated Pull Request creation daemon for GitHub and Bitbucket Cloud.
+> Periodically scans repository branches against configurable regex patterns and
+> opens Pull Requests toward the configured destination branches — skipping any
+> PR that already exists.
+
+## Docs
+
+- [README](https://github.com/devops-ia/pr-generator/blob/main/README.md): Full documentation — configuration, providers, rules, health endpoints, Docker, development
+
+## Install and Run
+
+```bash
+# Install from source
+pip install -e .
+
+# Run (default config path: /etc/pr-generator/config.yaml)
+pr-generator
+
+# Override config path
+CONFIG_PATH=./config.yaml pr-generator
+
+# Check version
+pr-generator --version
+```
+
+## Docker
+
+```bash
+# GitHub App + Bitbucket
+docker run --rm \
+  -v "$(pwd)/config.yaml:/etc/pr-generator/config.yaml:ro" \
+  -v "$(pwd)/github-app.pem:/secrets/github-app.pem:ro" \
+  -e BITBUCKET_TOKEN=your-token \
+  -p 8080:8080 \
+  ghcr.io/devops-ia/pr-generator:latest
+
+# GitHub PAT only
+docker run --rm \
+  -v "$(pwd)/config.yaml:/etc/pr-generator/config.yaml:ro" \
+  -e GITHUB_TOKEN=ghp_xxxx \
+  -p 8080:8080 \
+  ghcr.io/devops-ia/pr-generator:latest
+```
+
+## Configuration File (config.yaml)
+
+```yaml
+# /etc/pr-generator/config.yaml  (override with CONFIG_PATH env var)
+
+scan_frequency: 300        # seconds between scan cycles (default: 300, minimum: 10)
+log_level: INFO            # DEBUG | INFO | WARNING | ERROR
+log_format: text           # "text" (human-readable) | "json" (structured, for log aggregators)
+dry_run: false             # when true, PRs are logged but never created
+health_port: 8080          # port for the built-in health HTTP server
+
+providers:
+  github:
+    enabled: true
+    owner: my-org
+    repo: my-repo
+    auth_method: app           # "app" (GitHub App, default) | "pat" (Personal Access Token)
+    app_id: "123456"
+    installation_id: "78901234"  # optional — auto-resolved from repo if omitted
+    private_key_path: /secrets/github-app.pem
+    # Alternative: GITHUB_APP_PRIVATE_KEY env var (plain PEM or base64-encoded)
+    timeout: 30
+
+  bitbucket:
+    enabled: true
+    workspace: my-workspace
+    repo_slug: my-repo
+    token_env: BITBUCKET_TOKEN   # env var holding the bearer token
+    close_source_branch: true    # delete source branch after PR merges (default: true)
+    timeout: 30
+
+rules:
+  - pattern: "feature/.*"        # Python regex, re.match (anchored at start)
+    destinations:
+      github: main               # create PRs toward "main" on GitHub
+      bitbucket: develop         # create PRs toward "develop" on Bitbucket
+
+  - pattern: "release/.*"
+    destinations:
+      github: main
+
+  - pattern: ".*-hotfix-.*"
+    destinations:
+      bitbucket: master
+```
+
+## GitHub PAT Authentication
+
+```yaml
+providers:
+  github:
+    enabled: true
+    auth_method: pat
+    owner: my-org
+    repo: my-repo
+    token_env: GITHUB_TOKEN    # env var name; defaults to "GITHUB_TOKEN"
+    timeout: 30
+```
+
+```bash
+export GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+CONFIG_PATH=./config.yaml pr-generator
+```
+
+## Multi-Provider Setup (multiple orgs / workspaces)
+
+```yaml
+# All providers of the same type share one secret per type.
+# Each provider MUST use a unique token_env to avoid credential collisions.
+
+providers:
+  github-acme:
+    type: github           # required for non-standard key names
+    enabled: true
+    auth_method: app
+    owner: acme-org
+    repo: backend
+    app_id: "111"
+    private_key_path: /secrets/acme-app.pem
+
+  github-skunkworks:
+    type: github
+    enabled: true
+    auth_method: pat
+    owner: skunkworks-org
+    repo: platform
+    token_env: SKUNKWORKS_GITHUB_TOKEN   # must be unique across PAT providers
+
+  bitbucket-eu:
+    type: bitbucket
+    enabled: true
+    workspace: eu-workspace
+    repo_slug: my-repo
+    token_env: BITBUCKET_EU_TOKEN        # must be unique across Bitbucket providers
+
+  bitbucket-us:
+    type: bitbucket
+    enabled: true
+    workspace: us-workspace
+    repo_slug: my-repo
+    token_env: BITBUCKET_US_TOKEN        # different env var — required
+
+rules:
+  - pattern: "feature/.*"
+    destinations:
+      github-acme: main
+      github-skunkworks: develop
+      bitbucket-eu: develop
+      bitbucket-us: develop
+```
+
+## ArgoCD Image Updater Integration
+
+pr-generator is designed to work with [Argo CD Image Updater](https://argocd-image-updater.readthedocs.io/).
+Image Updater creates branches like `argocd-image-updater-set-<app>-<env>-<image>`.
+Configure rules to automatically open PRs from those branches to the target branch.
+
+```yaml
+scan_frequency: 120
+
+providers:
+  github:
+    enabled: true
+    owner: my-org
+    repo: gitops-repo
+    auth_method: app
+    app_id: "123456"
+    private_key_path: /secrets/github-app.pem
+
+rules:
+  # dev environment — PR toward develop
+  - pattern: "argocd-image-updater-.*-dev-.*"
+    destinations:
+      github: develop
+
+  # staging environment — PR toward staging
+  - pattern: "argocd-image-updater-.*-staging-.*"
+    destinations:
+      github: staging
+
+  # production environment — PR toward main
+  - pattern: "argocd-image-updater-.*-pro-.*"
+    destinations:
+      github: main
+```
+
+## Environment Variables Reference
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CONFIG_PATH` | Path to the YAML config file | `/etc/pr-generator/config.yaml` |
+| `GITHUB_APP_PRIVATE_KEY` | GitHub App PEM (plain or base64). Used only when `private_key_path` is absent or empty | — |
+| `GITHUB_TOKEN` | Default env var for GitHub PAT providers (`token_env: GITHUB_TOKEN`) | — |
+| `BITBUCKET_TOKEN` | Default env var for Bitbucket providers (`token_env: BITBUCKET_TOKEN`) | — |
+| *any custom name* | Custom token env var referenced by `token_env` in provider config | — |
+
+**Note on `private_key_path`**: if the field is set but the file does not exist, the application
+raises `FileNotFoundError` at startup — there is no silent fallthrough to `GITHUB_APP_PRIVATE_KEY`.
+
+## Security — tokenEnv Uniqueness
+
+Multiple providers of the same type that share a `token_env` value will raise a `ValueError` at
+startup. This prevents silent credential collisions where two providers receive the same token.
+
+```yaml
+# WRONG — both providers see the same BITBUCKET_TOKEN → ValueError at startup
+providers:
+  bb-eu:
+    type: bitbucket
+    token_env: BITBUCKET_TOKEN  # collision!
+  bb-us:
+    type: bitbucket
+    token_env: BITBUCKET_TOKEN  # collision!
+
+# CORRECT — each provider has its own env var
+providers:
+  bb-eu:
+    type: bitbucket
+    token_env: BITBUCKET_EU_TOKEN
+  bb-us:
+    type: bitbucket
+    token_env: BITBUCKET_US_TOKEN
+```
+
+## Health Endpoints
+
+```bash
+# Liveness — 200 while running, 503 during shutdown
+curl http://localhost:8080/livez
+
+# Readiness — 200 after first scan cycle, 503 before
+curl http://localhost:8080/readyz
+
+# Healthz — alias for /livez
+curl http://localhost:8080/healthz
+```
+
+Kubernetes probe configuration:
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /livez
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 10
+```
+
+## Programmatic API — Load Config
+
+```python
+import os
+from pr_generator.config import load_config
+
+os.environ["CONFIG_PATH"] = "./config.yaml"
+config = load_config()
+
+print(config.scan_frequency)   # int
+print(config.dry_run)           # bool
+print(list(config.providers))   # ["github", "bitbucket"]
+print(config.rules[0].pattern)  # "feature/.*"
+```
+
+## Programmatic API — GitHubProvider
+
+```python
+from pr_generator.models import ProviderConfig
+from pr_generator.providers.github import GitHubProvider, GitHubError
+
+# GitHub App
+config = ProviderConfig(
+    name="github",
+    enabled=True,
+    type="github",
+    owner="my-org",
+    repo="my-repo",
+    auth_method="app",
+    app_id="123456",
+    installation_id="78901234",  # optional — auto-resolved if empty
+    private_key="-----BEGIN RSA PRIVATE KEY-----\n...",
+    timeout=30.0,
+)
+
+provider = GitHubProvider(config)
+
+try:
+    branches = provider.get_branches()           # ["main", "develop", "feature/x"]
+    exists = provider.check_existing_pr("feature/x", "main")  # True / False
+    if not exists:
+        provider.create_pull_request("feature/x", "main")
+    provider.reset_cycle_cache()                 # call at start of each cycle
+except GitHubError as exc:
+    print(f"error {exc.status_code}: {exc}")
+```
+
+```python
+# GitHub PAT
+config_pat = ProviderConfig(
+    name="github",
+    enabled=True,
+    type="github",
+    owner="my-org",
+    repo="my-repo",
+    auth_method="pat",
+    token="ghp_xxxxxxxxxxxx",
+    timeout=30.0,
+)
+provider = GitHubProvider(config_pat)
+```
+
+## Programmatic API — BitbucketProvider
+
+```python
+from pr_generator.models import ProviderConfig
+from pr_generator.providers.bitbucket import BitbucketProvider, BitbucketError
+
+config = ProviderConfig(
+    name="bitbucket",
+    enabled=True,
+    type="bitbucket",
+    workspace="my-workspace",
+    repo_slug="my-repo",
+    token="your-bearer-token",
+    timeout=30.0,
+    close_source_branch=True,
+)
+
+provider = BitbucketProvider(config)
+
+try:
+    branches = provider.get_branches()
+    exists = provider.check_existing_pr("feature/x", "develop")
+    if not exists:
+        provider.create_pull_request("feature/x", "develop")
+        # PR is created with default reviewers fetched automatically
+    provider.reset_cycle_cache()
+except BitbucketError as exc:
+    print(f"error {exc.status_code}: {exc}")
+```
+
+## Programmatic API — Scan Cycle
+
+```python
+from pr_generator.config import load_config
+from pr_generator.scanner import scan_cycle
+from pr_generator.providers.github import GitHubProvider
+from pr_generator.providers.bitbucket import BitbucketProvider
+
+config = load_config()
+
+providers = {}
+for name, pconf in config.providers.items():
+    if pconf.type == "github":
+        providers[name] = GitHubProvider(pconf)
+    elif pconf.type == "bitbucket":
+        providers[name] = BitbucketProvider(pconf)
+
+result = scan_cycle(config, providers, cycle_id=1)
+
+for r in result.rule_results:
+    print(f"pattern={r.rule_pattern} provider={r.provider} dest={r.destination}")
+    print(f"  processed={r.processed} created={r.created} "
+          f"skipped={r.skipped_existing} dry_run={r.simulated} errors={r.errors}")
+```
+
+## Programmatic API — Health Server
+
+```python
+from threading import Event
+from pr_generator.health import start_health_server
+
+stop_event = Event()
+server, ready_event = start_health_server(port=8080, stop_event=stop_event)
+
+# After first successful scan cycle:
+ready_event.set()    # /readyz starts returning 200
+
+# Graceful shutdown:
+stop_event.set()     # /livez starts returning 503
+```
+
+## Data Models
+
+```python
+from pr_generator.models import AppConfig, ProviderConfig, ScanRule, RuleResult, CycleResult
+import re
+
+# ProviderConfig — immutable, frozen dataclass
+provider = ProviderConfig(
+    name="github",
+    enabled=True,
+    type="github",           # "github" | "bitbucket"
+    owner="my-org",
+    repo="my-repo",
+    auth_method="app",       # "app" | "pat"
+    app_id="123456",
+    installation_id="78901234",
+    private_key="-----BEGIN RSA PRIVATE KEY-----\n...",
+    timeout=30.0,
+)
+
+# ScanRule
+rule = ScanRule(
+    pattern="feature/.*",
+    compiled=re.compile("feature/.*"),
+    destinations={"github": "main", "bitbucket": "develop"},
+)
+
+# RuleResult — outcome of one rule×provider pair per cycle
+result = RuleResult(
+    rule_pattern="feature/.*",
+    provider="github",
+    destination="main",
+    processed=5,
+    created=2,
+    skipped_existing=3,
+    simulated=0,    # dry-run count
+    errors=0,
+)
+```
+
+## Troubleshooting
+
+### Application exits immediately with FileNotFoundError
+
+```
+FileNotFoundError: [Core] private_key_path '/secrets/github-app.pem' does not exist.
+```
+
+The `private_key_path` is set in config.yaml but the file is not mounted.
+Mount the PEM file at the configured path or remove `private_key_path` and set
+`GITHUB_APP_PRIVATE_KEY` instead.
+
+### ValueError: duplicate tokenEnv
+
+```
+ValueError: [Core] Providers 'bb-eu' and 'bb-us' both use tokenEnv 'BITBUCKET_TOKEN'.
+```
+
+Two enabled providers of the same type share the same `token_env`. Assign a unique
+env var name to each provider and export the corresponding variable.
+
+### /readyz returns 503
+
+Normal during startup — the endpoint returns 503 until the first full scan cycle
+completes. Check `/livez` for liveness. If readiness never flips to 200, check the
+logs for errors in the scan cycle (API auth failures, missing config fields, etc.).
+
+### No PRs created (dry_run: false, branches exist)
+
+- Confirm the branch regex uses `re.match` semantics (anchored at start). A pattern
+  `feature/.*` will NOT match `hotfix/feature/x` — prefix anchoring is intentional.
+- Confirm the provider name in `rules[].destinations` matches the provider key in
+  `providers:` exactly.
+- Enable `log_level: DEBUG` to see per-branch matching decisions.
+
+### GitHub App: "Could not resolve installation id"
+
+Set `installation_id` explicitly in the provider config, or grant the GitHub App
+installation access to the target repository.

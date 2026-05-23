@@ -1,4 +1,20 @@
 {
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "pr-generator",
+  "description": "Automated Pull Request creation daemon for GitHub and Bitbucket Cloud. Periodically scans repository branches, matches them against configurable regex patterns, and automatically opens Pull Requests toward the configured destination branches.",
   "url": "https://context7.com/devops-ia/pr-generator",
-  "public_key": "pk_poNqP0E20Jn62M589pdY6"
+  "public_key": "pk_poNqP0E20Jn62M589pdY6",
+  "folders": ["src"],
+  "excludeFolders": ["tests", ".github"],
+  "excludeFiles": ["CHANGELOG.md"],
+  "rules": [
+    "Use CONFIG_PATH environment variable to override the default config path (/etc/pr-generator/config.yaml)",
+    "Provider names 'github' and 'bitbucket' auto-infer their type; all other names require an explicit 'type: github' or 'type: bitbucket' field",
+    "Each provider using token-based auth (GitHub PAT or Bitbucket) must have a unique token_env value — duplicate token_env across providers of the same type raises ValueError at startup",
+    "private_key_path must point to an existing file — if the path is set but the file is missing, FileNotFoundError is raised (no silent fallthrough to GITHUB_APP_PRIVATE_KEY env var)",
+    "The application always runs as a single replica — no distributed coordination",
+    "Dry-run mode (dry_run: true) logs PR creation intent without making any API calls",
+    "GET /readyz returns 503 until the first scan cycle completes — use GET /livez for liveness probes",
+    "Rules use re.match (anchored at start of string) — patterns like 'feature/.*' match branches starting with 'feature/'"
+  ]
 }
