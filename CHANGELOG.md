@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/devops-ia/pr-generator/compare/v1.2.0...v1.3.0) (2026-05-23)
+
+
+### Features
+
+* Annotations, metrics and tests ([582b368](https://github.com/devops-ia/pr-generator/commit/582b368d4f162deef0cb748bdd3e1747228a97f6))
+
 # [1.2.0](https://github.com/devops-ia/pr-generator/compare/v1.1.0...v1.2.0) (2026-05-23)
 
 
