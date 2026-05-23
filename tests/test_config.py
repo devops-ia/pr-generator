@@ -18,8 +18,9 @@ _FAKE_PEM = "-----BEGIN RSA PRIVATE KEY-----\nZmFrZQ==\n-----END RSA PRIVATE KEY
 class TestLoadFromFile:
     def test_single_rule_both_providers(self, tmp_path, monkeypatch):
         monkeypatch.setenv("BITBUCKET_TOKEN", "bb-token")
-        monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", _FAKE_PEM)
-        path = _write_config(tmp_path, """
+        key_file = tmp_path / "app.pem"
+        key_file.write_text(_FAKE_PEM)
+        path = _write_config(tmp_path, f"""
             scan_frequency: 60
             log_level: DEBUG
             dry_run: true
@@ -31,7 +32,7 @@ class TestLoadFromFile:
                 repo: my-repo
                 app_id: "111"
                 installation_id: "222"
-                private_key_path: /nonexistent
+                private_key_path: {key_file}
                 timeout: 10
               bitbucket:
                 enabled: true
@@ -714,3 +715,215 @@ class TestNullYamlValues:
         with pytest.raises(FileNotFoundError):
             load_config()
 
+
+class TestPrivateKeyPathSecurity:
+    """private_key_path must not silently fall through to env-var when the file is absent."""
+
+    def test_private_key_path_file_not_found_raises(self, tmp_path, monkeypatch):
+        """A non-existent private_key_path must raise FileNotFoundError, not silently
+        fall through to the GITHUB_APP_PRIVATE_KEY env var."""
+        monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", _FAKE_PEM)
+        path = _write_config(tmp_path, """
+            providers:
+              github:
+                enabled: true
+                owner: org
+                repo: repo
+                app_id: "1"
+                private_key_path: /this/path/does/not/exist.pem
+            rules:
+              - pattern: ".*"
+                destinations:
+                  github: main
+        """)
+        monkeypatch.setenv("CONFIG_PATH", path)
+        from pr_generator.config import load_config
+        with pytest.raises(FileNotFoundError, match="private_key_path"):
+            load_config()
+
+    def test_private_key_path_empty_falls_through_to_env(self, tmp_path, monkeypatch):
+        """When private_key_path is absent/empty the env-var fallback still works."""
+        monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", _FAKE_PEM)
+        path = _write_config(tmp_path, """
+            providers:
+              github:
+                enabled: true
+                owner: org
+                repo: repo
+                app_id: "1"
+            rules:
+              - pattern: ".*"
+                destinations:
+                  github: main
+        """)
+        monkeypatch.setenv("CONFIG_PATH", path)
+        from pr_generator.config import load_config
+        cfg = load_config()
+        assert cfg.providers["github"].private_key == _FAKE_PEM
+
+    def test_private_key_path_set_and_file_exists_loads_key(self, tmp_path, monkeypatch):
+        """When private_key_path points to an existing file the key is loaded from it."""
+        key_file = tmp_path / "app.pem"
+        key_file.write_text(_FAKE_PEM)
+        monkeypatch.delenv("GITHUB_APP_PRIVATE_KEY", raising=False)
+        path = _write_config(tmp_path, f"""
+            providers:
+              github:
+                enabled: true
+                owner: org
+                repo: repo
+                app_id: "1"
+                private_key_path: {key_file}
+            rules:
+              - pattern: ".*"
+                destinations:
+                  github: main
+        """)
+        monkeypatch.setenv("CONFIG_PATH", path)
+        from pr_generator.config import load_config
+        cfg = load_config()
+        assert cfg.providers["github"].private_key == _FAKE_PEM
+
+
+class TestTokenEnvUniqueness:
+    """tokenEnv collisions across providers of the same type must be rejected."""
+
+    def test_two_bitbucket_providers_same_token_env_raises(self, tmp_path, monkeypatch):
+        """Two enabled Bitbucket providers sharing tokenEnv must raise ValueError."""
+        monkeypatch.setenv("BITBUCKET_TOKEN", "tok")
+        path = _write_config(tmp_path, """
+            providers:
+              bitbucket-a:
+                type: bitbucket
+                enabled: true
+                workspace: ws-a
+                repo_slug: rs-a
+                token_env: BITBUCKET_TOKEN
+              bitbucket-b:
+                type: bitbucket
+                enabled: true
+                workspace: ws-b
+                repo_slug: rs-b
+                token_env: BITBUCKET_TOKEN
+            rules:
+              - pattern: ".*"
+                destinations:
+                  bitbucket-a: main
+                  bitbucket-b: main
+        """)
+        monkeypatch.setenv("CONFIG_PATH", path)
+        from pr_generator.config import load_config
+        with pytest.raises(ValueError, match="tokenEnv"):
+            load_config()
+
+    def test_two_github_pat_providers_same_token_env_raises(self, tmp_path, monkeypatch):
+        """Two enabled GitHub PAT providers sharing tokenEnv must raise ValueError."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_tok")
+        path = _write_config(tmp_path, """
+            providers:
+              github-a:
+                type: github
+                enabled: true
+                auth_method: pat
+                owner: org-a
+                repo: repo-a
+                token_env: GITHUB_TOKEN
+              github-b:
+                type: github
+                enabled: true
+                auth_method: pat
+                owner: org-b
+                repo: repo-b
+                token_env: GITHUB_TOKEN
+            rules:
+              - pattern: ".*"
+                destinations:
+                  github-a: main
+                  github-b: main
+        """)
+        monkeypatch.setenv("CONFIG_PATH", path)
+        from pr_generator.config import load_config
+        with pytest.raises(ValueError, match="tokenEnv"):
+            load_config()
+
+    def test_bitbucket_default_token_env_collision_raises(self, tmp_path, monkeypatch):
+        """Using the default BITBUCKET_TOKEN for two providers must raise ValueError."""
+        monkeypatch.setenv("BITBUCKET_TOKEN", "tok")
+        path = _write_config(tmp_path, """
+            providers:
+              bitbucket:
+                enabled: true
+                workspace: ws
+                repo_slug: rs
+              bitbucket-org1:
+                type: bitbucket
+                enabled: true
+                workspace: ws2
+                repo_slug: rs2
+            rules:
+              - pattern: ".*"
+                destinations:
+                  bitbucket: main
+                  bitbucket-org1: main
+        """)
+        monkeypatch.setenv("CONFIG_PATH", path)
+        from pr_generator.config import load_config
+        with pytest.raises(ValueError, match="tokenEnv"):
+            load_config()
+
+    def test_two_bitbucket_providers_distinct_token_envs_ok(self, tmp_path, monkeypatch):
+        """Two Bitbucket providers with different tokenEnv values must load successfully."""
+        monkeypatch.setenv("BB_TOKEN_A", "tok-a")
+        monkeypatch.setenv("BB_TOKEN_B", "tok-b")
+        path = _write_config(tmp_path, """
+            providers:
+              bitbucket-a:
+                type: bitbucket
+                enabled: true
+                workspace: ws-a
+                repo_slug: rs-a
+                token_env: BB_TOKEN_A
+              bitbucket-b:
+                type: bitbucket
+                enabled: true
+                workspace: ws-b
+                repo_slug: rs-b
+                token_env: BB_TOKEN_B
+            rules:
+              - pattern: ".*"
+                destinations:
+                  bitbucket-a: main
+                  bitbucket-b: main
+        """)
+        monkeypatch.setenv("CONFIG_PATH", path)
+        from pr_generator.config import load_config
+        cfg = load_config()
+        assert cfg.providers["bitbucket-a"].token == "tok-a"
+        assert cfg.providers["bitbucket-b"].token == "tok-b"
+
+    def test_disabled_provider_token_env_collision_ignored(self, tmp_path, monkeypatch):
+        """A disabled provider sharing a tokenEnv must not trigger the uniqueness check."""
+        monkeypatch.setenv("BITBUCKET_TOKEN", "tok")
+        path = _write_config(tmp_path, """
+            providers:
+              bitbucket:
+                enabled: true
+                workspace: ws
+                repo_slug: rs
+                token_env: BITBUCKET_TOKEN
+              bitbucket-disabled:
+                type: bitbucket
+                enabled: false
+                workspace: ws2
+                repo_slug: rs2
+                token_env: BITBUCKET_TOKEN
+            rules:
+              - pattern: ".*"
+                destinations:
+                  bitbucket: main
+        """)
+        monkeypatch.setenv("CONFIG_PATH", path)
+        from pr_generator.config import load_config
+        cfg = load_config()
+        assert "bitbucket" in cfg.providers
+        assert "bitbucket-disabled" not in cfg.providers

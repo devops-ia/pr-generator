@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pr-generator · Automated PR daemon for GitHub &amp; Bitbucket</title>
+  <meta name="description" content="pr-generator — automated pull request creation daemon for GitHub and Bitbucket Cloud. Watches branches matching configurable regex patterns and opens PRs automatically. Designed for ArgoCD Image Updater GitOps workflows." />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Design tokens ───────────────────────────────────── */
+    :root {
+      --bg:       #0B0F17;
+      --surface:  #111827;
+      --surface2: #1E2433;
+      --border:   #1E2D3D;
+      --fg:       #F1F5F9;
+      --fg-dim:   #94A3B8;
+      --muted:    #475569;
+      --accent:   #8B5CF6;
+      --accent2:  #A78BFA;
+      --code-bg:  #0D1117;
+      --radius:   8px;
+      --mono:     'IBM Plex Mono', monospace;
+      --sans:     'IBM Plex Sans', sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+
+    /* ── Layout ──────────────────────────────────────────── */
+    .container {
+      width: 100%;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ── Header ──────────────────────────────────────────── */
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 16px 0;
+    }
+    .header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--mono);
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--fg);
+      cursor: default;
+    }
+    .logo-icon {
+      width: 28px;
+      height: 28px;
+      background: var(--accent);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .header-links {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .header-links a {
+      color: var(--fg-dim);
+      font-size: 0.875rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color 150ms;
+    }
+    .header-links a:hover { color: var(--fg); text-decoration: none; }
+
+    /* ── Hero ────────────────────────────────────────────── */
+    .hero {
+      padding: 72px 0 56px;
+      text-align: center;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(139, 92, 246, 0.12);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      padding: 4px 12px;
+      border-radius: 100px;
+      margin-bottom: 24px;
+    }
+    .hero h1 {
+      font-family: var(--mono);
+      font-size: clamp(1.75rem, 5vw, 2.75rem);
+      font-weight: 600;
+      line-height: 1.2;
+      color: var(--fg);
+      margin-bottom: 16px;
+    }
+    .hero h1 span { color: var(--accent); }
+    .hero p {
+      color: var(--fg-dim);
+      font-size: 1.0625rem;
+      max-width: 600px;
+      margin: 0 auto 40px;
+    }
+    .badges {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 48px;
+    }
+    .badges img { height: 20px; }
+
+    /* ── Quick-start block ───────────────────────────────── */
+    .quickstart {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      max-width: 640px;
+      margin: 0 auto;
+      text-align: left;
+    }
+    .quickstart-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .copy-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--fg-dim);
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      padding: 3px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: border-color 150ms, color 150ms;
+    }
+    .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .copy-btn.copied { border-color: var(--accent); color: var(--accent); }
+    .quickstart pre {
+      padding: 20px;
+      font-family: var(--mono);
+      font-size: 0.8125rem;
+      line-height: 1.8;
+      overflow-x: auto;
+    }
+    .quickstart pre .prompt  { color: var(--accent); user-select: none; }
+    .quickstart pre .cmd     { color: #7DD3FC; }
+    .quickstart pre .arg     { color: #C084FC; }
+    .quickstart pre .val     { color: #FDE68A; }
+    .quickstart pre .comment { color: var(--muted); }
+
+    /* ── Section ─────────────────────────────────────────── */
+    section { padding: 64px 0; }
+    section + section { border-top: 1px solid var(--border); }
+    .section-label {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+    .section-title {
+      font-family: var(--mono);
+      font-size: 1.375rem;
+      font-weight: 600;
+      color: var(--fg);
+      margin-bottom: 12px;
+    }
+    .section-desc {
+      color: var(--fg-dim);
+      max-width: 560px;
+      margin-bottom: 40px;
+    }
+
+    /* ── Feature grid ────────────────────────────────────── */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      transition: border-color 200ms;
+    }
+    .feature-card:hover { border-color: rgba(139, 92, 246, 0.4); }
+    .feature-icon {
+      width: 36px;
+      height: 36px;
+      background: rgba(139, 92, 246, 0.1);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 14px;
+    }
+    .feature-card h3 {
+      font-family: var(--mono);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--fg);
+      margin-bottom: 6px;
+    }
+    .feature-card p {
+      font-size: 0.875rem;
+      color: var(--fg-dim);
+      line-height: 1.6;
+    }
+
+    /* ── Code blocks ─────────────────────────────────────── */
+    .code-block {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .code-block + .code-block { margin-top: 16px; }
+    .code-block-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .code-block pre {
+      padding: 20px;
+      font-family: var(--mono);
+      font-size: 0.8125rem;
+      line-height: 1.9;
+      overflow-x: auto;
+    }
+    .code-block pre .prompt  { color: var(--accent); user-select: none; }
+    .code-block pre .cmd     { color: #7DD3FC; }
+    .code-block pre .arg     { color: #C084FC; }
+    .code-block pre .val     { color: #FDE68A; }
+    .code-block pre .comment { color: var(--muted); }
+    .code-block pre .key     { color: var(--accent2); }
+    .code-block pre .str     { color: #86EFAC; }
+
+    /* ── Values table ────────────────────────────────────── */
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    thead tr { background: var(--surface); }
+    th {
+      font-family: var(--mono);
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-align: left;
+      padding: 12px 16px;
+      color: var(--fg-dim);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    td {
+      padding: 11px 16px;
+      border-bottom: 1px solid rgba(51,65,85,0.5);
+      vertical-align: top;
+      color: var(--fg-dim);
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+    td code {
+      font-family: var(--mono);
+      font-size: 0.8em;
+      background: var(--surface2);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #C084FC;
+    }
+    .val-type {
+      font-family: var(--mono);
+      font-size: 0.75em;
+      color: #86EFAC;
+    }
+
+    /* ── Callout ─────────────────────────────────────────── */
+    .callout {
+      background: rgba(139, 92, 246, 0.07);
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-top: 24px;
+      font-size: 0.875rem;
+      color: var(--fg-dim);
+    }
+    .callout strong { color: var(--accent2); }
+
+    /* ── FAQ accordion ───────────────────────────────────── */
+    details {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    details + details { margin-top: 8px; }
+    summary {
+      font-family: var(--mono);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--fg);
+      padding: 16px 20px;
+      cursor: pointer;
+      background: var(--surface);
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::after { content: '+'; color: var(--accent); font-size: 1.1rem; transition: transform 200ms; }
+    details[open] summary::after { transform: rotate(45deg); }
+    details[open] summary { border-bottom: 1px solid var(--border); }
+    .faq-body {
+      padding: 16px 20px;
+      font-size: 0.875rem;
+      color: var(--fg-dim);
+      line-height: 1.7;
+    }
+    .faq-body code {
+      font-family: var(--mono);
+      font-size: 0.85em;
+      background: var(--surface2);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #C084FC;
+    }
+    .faq-body pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 16px;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      overflow-x: auto;
+      margin-top: 10px;
+      color: #CBD5E1;
+    }
+
+    /* ── Footer ──────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 0;
+    }
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .footer-inner p { font-size: 0.8125rem; color: var(--muted); }
+    .footer-links { display: flex; gap: 20px; }
+    .footer-links a {
+      font-size: 0.8125rem;
+      color: var(--muted);
+      transition: color 150ms;
+    }
+    .footer-links a:hover { color: var(--fg); text-decoration: none; }
+
+    /* ── Responsive ──────────────────────────────────────── */
+    @media (max-width: 640px) {
+      .hero { padding: 48px 0 40px; }
+      .features { grid-template-columns: 1fr; }
+      .footer-inner { flex-direction: column; align-items: flex-start; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ────────────────────────────────────────────── -->
+<header>
+  <div class="container">
+    <div class="header-inner">
+      <div class="logo">
+        <div class="logo-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0F172A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>
+          </svg>
+        </div>
+        pr-generator
+      </div>
+      <nav class="header-links" aria-label="External links">
+        <a href="https://github.com/devops-ia/pr-generator" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+          GitHub
+        </a>
+        <a href="https://pypi.org/project/pr-generator/" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+          PyPI
+        </a>
+        <a href="https://hub.docker.com/r/devopsia/pr-generator" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="2" ry="2"/><path d="M7 11h2m2 0h2m2 0h2M7 7h2m2 0h2m2 0h2m-9 8h2"/></svg>
+          Docker Hub
+        </a>
+        <a href="https://devops-ia.github.io/helm-pr-generator/" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+          Helm Chart
+        </a>
+      </nav>
+    </div>
+  </div>
+</header>
+
+<!-- ── Hero ──────────────────────────────────────────────── -->
+<section class="hero" aria-labelledby="hero-title">
+  <div class="container">
+    <div class="badge" aria-label="GitOps / Automation category">
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="var(--accent)" aria-hidden="true"><circle cx="5" cy="5" r="5"/></svg>
+      GitOps &middot; Python &middot; Automation
+    </div>
+    <h1 id="hero-title">
+      Automated PRs for<br/><span>GitHub &amp; Bitbucket</span>
+    </h1>
+    <p>
+      pr-generator watches for branches matching configurable regex patterns
+      and automatically opens Pull Requests. Built for
+      <strong>ArgoCD Image Updater</strong> and GitOps workflows.
+    </p>
+
+    <div class="badges">
+      <img id="badge-version" src="https://img.shields.io/badge/version-loading-8B5CF6?style=flat&logo=python&logoColor=white" alt="Version" />
+      <img src="https://img.shields.io/badge/python-3.11%2B-3B82F6?style=flat&logo=python&logoColor=white" alt="Python 3.11+" />
+      <img src="https://img.shields.io/badge/License-Apache%202.0-yellow.svg?style=flat" alt="Apache 2.0 License" />
+      <a href="https://github.com/devops-ia/pr-generator/actions/workflows/docker-build.yml" target="_blank" rel="noopener">
+        <img src="https://github.com/devops-ia/pr-generator/actions/workflows/docker-build.yml/badge.svg" alt="Docker Build" />
+      </a>
+    </div>
+
+    <div class="quickstart" role="region" aria-label="Quick start with Docker">
+      <div class="quickstart-header">
+        <span>Quick start &mdash; Docker</span>
+        <button class="copy-btn" id="copy-hero" aria-label="Copy Docker run command">Copy</button>
+      </div>
+      <pre id="hero-code"><span class="prompt">$ </span><span class="cmd">docker</span> <span class="arg">run</span> \
+    <span class="arg">-e</span> <span class="val">GITHUB_APP_ID</span>=123456 \
+    <span class="arg">-e</span> <span class="val">GITHUB_INSTALLATION_ID</span>=78901234 \
+    <span class="arg">-e</span> <span class="val">GITHUB_APP_PRIVATE_KEY</span>="$(cat github-app.pem)" \
+    <span class="arg">-v</span> <span class="val">./config.yaml</span>:/etc/pr-generator/config.yaml \
+    ghcr.io/devops-ia/pr-generator:latest</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ── Features ───────────────────────────────────────────── -->
+<section aria-labelledby="features-title">
+  <div class="container">
+    <p class="section-label">Features</p>
+    <h2 class="section-title" id="features-title">Everything you need, out of the box</h2>
+    <p class="section-desc">A lightweight Python daemon with no persistent storage requirements. Runs anywhere: bare metal, Docker, or Kubernetes.</p>
+    <div class="features">
+
+      <div class="feature-card">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+        </div>
+        <h3>GitHub App &amp; PAT</h3>
+        <p>GitHub App (PEM private key) or Personal Access Token. Configure per provider with <code>auth_method</code>.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        </div>
+        <h3>Bitbucket Cloud</h3>
+        <p>Full Bitbucket Cloud support via access token. Run GitHub and Bitbucket providers in a single process.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+        </div>
+        <h3>Multi-provider</h3>
+        <p>Multiple named providers of the same type. Different orgs, workspaces, or repos — all watched in one daemon.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <h3>Regex branch patterns</h3>
+        <p>Match any branch naming convention with full Python regex. Each rule can target multiple destination branches.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <h3>Safety by default</h3>
+        <p>Duplicate PR detection prevents opening a second PR for the same branch. <code>dry_run</code> mode for safe testing in production.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </div>
+        <h3>Health endpoint</h3>
+        <p>Built-in HTTP server exposes <code>GET /health</code> for liveness probes. No extra dependencies required.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <h3>Configurable scan frequency</h3>
+        <p>Set <code>scan_frequency</code> to control how often branches are polled. Defaults to 60 seconds.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+        </div>
+        <h3>Kubernetes-native</h3>
+        <p>Official <a href="https://devops-ia.github.io/helm-pr-generator/">Helm chart</a> with ServiceAccount, PDB, startup probe, and security-hardened pod spec.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── Install ────────────────────────────────────────────── -->
+<section aria-labelledby="install-title">
+  <div class="container">
+    <p class="section-label">Installation</p>
+    <h2 class="section-title" id="install-title">Multiple deployment options</h2>
+    <p class="section-desc">Run via Docker (recommended), install from PyPI, or deploy on Kubernetes with the Helm chart.</p>
+
+    <div class="code-block" role="region" aria-label="Docker Compose">
+      <div class="code-block-header">
+        <span>docker-compose.yml</span>
+        <button class="copy-btn" id="copy-compose" aria-label="Copy Docker Compose config">Copy</button>
+      </div>
+      <pre id="code-compose"><span class="key">services</span>:
+  <span class="key">pr-generator</span>:
+    <span class="key">image</span>: <span class="str">ghcr.io/devops-ia/pr-generator:latest</span>
+    <span class="key">restart</span>: <span class="str">unless-stopped</span>
+    <span class="key">volumes</span>:
+      - <span class="str">./config.yaml:/etc/pr-generator/config.yaml:ro</span>
+    <span class="key">environment</span>:
+      <span class="key">GITHUB_APP_ID</span>: <span class="str">"123456"</span>
+      <span class="key">GITHUB_INSTALLATION_ID</span>: <span class="str">"78901234"</span>
+    <span class="key">secrets</span>:
+      - <span class="str">github_pem</span>
+    <span class="key">healthcheck</span>:
+      <span class="key">test</span>: [<span class="str">"CMD"</span>, <span class="str">"wget"</span>, <span class="str">"-qO-"</span>, <span class="str">"http://localhost:8080/health"</span>]
+      <span class="key">interval</span>: <span class="str">30s</span>
+      <span class="key">retries</span>: <span class="str">3</span>
+
+<span class="key">secrets</span>:
+  <span class="key">github_pem</span>:
+    <span class="key">file</span>: <span class="str">./github-app.pem</span></pre>
+    </div>
+
+    <div class="code-block" role="region" aria-label="pip install">
+      <div class="code-block-header">
+        <span>bash &mdash; PyPI</span>
+        <button class="copy-btn" id="copy-pip" aria-label="Copy pip install">Copy</button>
+      </div>
+      <pre id="code-pip"><span class="prompt">$ </span><span class="cmd">pip</span> <span class="arg">install</span> pr-generator
+<span class="prompt">$ </span><span class="cmd">pr-generator</span> <span class="arg">--config</span> /etc/pr-generator/config.yaml</pre>
+    </div>
+
+    <div class="code-block" role="region" aria-label="Helm install">
+      <div class="code-block-header">
+        <span>bash &mdash; Kubernetes (Helm)</span>
+        <button class="copy-btn" id="copy-helm" aria-label="Copy Helm install">Copy</button>
+      </div>
+      <pre id="code-helm"><span class="prompt">$ </span><span class="cmd">helm</span> repo <span class="arg">add</span> <span class="val">helm-pr-generator</span> https://devops-ia.github.io/helm-pr-generator
+<span class="prompt">$ </span><span class="cmd">helm</span> repo <span class="arg">update</span>
+<span class="prompt">$ </span><span class="cmd">helm</span> <span class="arg">install</span> <span class="val">pr-generator</span> helm-pr-generator/pr-generator \
+    <span class="arg">--namespace</span> pr-generator <span class="arg">--create-namespace</span> \
+    <span class="arg">--set</span> <span class="val">config.providers.github.owner</span>=my-org \
+    <span class="arg">--set</span> <span class="val">config.providers.github.repo</span>=my-repo \
+    <span class="arg">--set</span> <span class="val">config.providers.github.appId</span>="123456" \
+    <span class="arg">--set</span> <span class="val">secrets.github.privateKey</span>="$(cat github-app.pem)"</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ── Configuration ─────────────────────────────────────── -->
+<section aria-labelledby="config-title">
+  <div class="container">
+    <p class="section-label">Configuration</p>
+    <h2 class="section-title" id="config-title">config.yaml reference</h2>
+    <p class="section-desc">
+      Mount your config at <code>/etc/pr-generator/config.yaml</code>.
+      Credentials are passed via environment variables — never in the config file.
+    </p>
+
+    <div class="code-block" role="region" aria-label="Full config.yaml example">
+      <div class="code-block-header">
+        <span>config.yaml &mdash; GitHub App + Bitbucket</span>
+        <button class="copy-btn" id="copy-config" aria-label="Copy full config">Copy</button>
+      </div>
+      <pre id="code-config"><span class="key">scan_frequency</span>: <span class="str">60</span>          <span class="comment"># seconds between scan cycles</span>
+<span class="key">dry_run</span>: <span class="str">false</span>                <span class="comment"># set true to simulate without creating PRs</span>
+
+<span class="key">providers</span>:
+  <span class="key">github</span>:                      <span class="comment"># name is free-form; type inferred from key</span>
+    <span class="key">enabled</span>: <span class="str">true</span>
+    <span class="key">owner</span>: <span class="str">my-org</span>
+    <span class="key">repo</span>: <span class="str">my-app</span>
+    <span class="key">auth_method</span>: <span class="str">app</span>           <span class="comment"># "app" (PEM) or "pat" (token)</span>
+    <span class="key">app_id</span>: <span class="str">"123456"</span>           <span class="comment"># from env: GITHUB_APP_ID</span>
+    <span class="key">installation_id</span>: <span class="str">"78901234"</span>
+    <span class="key">private_key_path</span>: <span class="str">/secrets/github.pem</span>  <span class="comment"># or use GITHUB_APP_PRIVATE_KEY env</span>
+
+  <span class="key">bitbucket</span>:
+    <span class="key">enabled</span>: <span class="str">true</span>
+    <span class="key">workspace</span>: <span class="str">my-workspace</span>
+    <span class="key">repo_slug</span>: <span class="str">my-app</span>
+    <span class="key">token_env</span>: <span class="str">BITBUCKET_TOKEN</span>   <span class="comment"># env var holding the access token</span>
+
+<span class="key">rules</span>:
+  - <span class="key">name</span>: <span class="str">image-updater-prs</span>
+    <span class="key">branch_pattern</span>: <span class="str">"^image-updater/.*"</span>
+    <span class="key">destinations</span>:
+      - <span class="key">provider</span>: <span class="str">github</span>
+        <span class="key">base</span>: <span class="str">main</span>
+      - <span class="key">provider</span>: <span class="str">bitbucket</span>
+        <span class="key">base</span>: <span class="str">main</span></pre>
+    </div>
+
+    <div class="callout">
+      <strong>Security:</strong> Each provider of the same type must use a unique <code>token_env</code> value.
+      The daemon raises a <code>ValueError</code> at startup if duplicates are detected — preventing silent credential overwrite.
+    </div>
+  </div>
+</section>
+
+<!-- ── ArgoCD Integration ─────────────────────────────────── -->
+<section aria-labelledby="argocd-title">
+  <div class="container">
+    <p class="section-label">ArgoCD Image Updater</p>
+    <h2 class="section-title" id="argocd-title">GitOps integration</h2>
+    <p class="section-desc">
+      ArgoCD Image Updater pushes image version bumps to a new branch. pr-generator watches
+      that branch pattern and opens the PR automatically — closing the GitOps loop without manual intervention.
+    </p>
+
+    <div class="code-block" role="region" aria-label="ArgoCD Image Updater Application annotation">
+      <div class="code-block-header">
+        <span>argocd Application annotations</span>
+        <button class="copy-btn" id="copy-argocd" aria-label="Copy ArgoCD annotations">Copy</button>
+      </div>
+      <pre id="code-argocd"><span class="key">apiVersion</span>: <span class="str">argoproj.io/v1alpha1</span>
+<span class="key">kind</span>: <span class="str">Application</span>
+<span class="key">metadata</span>:
+  <span class="key">annotations</span>:
+    <span class="comment"># Image Updater pushes to a branch, pr-generator opens the PR</span>
+    <span class="key">argocd-image-updater.argoproj.io/write-back-method</span>: <span class="str">git:repobranch</span>
+    <span class="key">argocd-image-updater.argoproj.io/git-branch</span>: <span class="str">main:image-updater/{{.SHA}}</span></pre>
+    </div>
+
+    <div class="code-block" role="region" aria-label="pr-generator rule for ArgoCD">
+      <div class="code-block-header">
+        <span>config.yaml &mdash; matching rule</span>
+        <button class="copy-btn" id="copy-argocd-rule" aria-label="Copy rule config">Copy</button>
+      </div>
+      <pre id="code-argocd-rule"><span class="key">rules</span>:
+  - <span class="key">name</span>: <span class="str">image-updater-prs</span>
+    <span class="key">branch_pattern</span>: <span class="str">"^image-updater/.*"</span>
+    <span class="key">destinations</span>:
+      - <span class="key">provider</span>: <span class="str">github</span>
+        <span class="key">base</span>: <span class="str">main</span></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ── Key config fields ──────────────────────────────────── -->
+<section aria-labelledby="ref-title">
+  <div class="container">
+    <p class="section-label">Reference</p>
+    <h2 class="section-title" id="ref-title">Key configuration fields</h2>
+    <p class="section-desc">
+      Common fields and environment variables. Full reference in
+      <a href="https://github.com/devops-ia/pr-generator/blob/main/README.md" target="_blank" rel="noopener">README.md</a>
+      and <a href="https://github.com/devops-ia/pr-generator/blob/main/llms.txt" target="_blank" rel="noopener">llms.txt</a>.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Field / Env var</th>
+            <th>Description</th>
+            <th>Type</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>scan_frequency</code></td>
+            <td>Seconds between branch scan cycles.</td>
+            <td><span class="val-type">int</span></td>
+          </tr>
+          <tr>
+            <td><code>dry_run</code></td>
+            <td>Simulate PR creation without modifying repositories.</td>
+            <td><span class="val-type">bool</span></td>
+          </tr>
+          <tr>
+            <td><code>providers.*.auth_method</code></td>
+            <td><code>app</code> (GitHub App PEM) or <code>pat</code> (Personal Access Token).</td>
+            <td><span class="val-type">str</span></td>
+          </tr>
+          <tr>
+            <td><code>providers.*.private_key_path</code></td>
+            <td>Path to PEM file. Raises <code>FileNotFoundError</code> if set but missing.</td>
+            <td><span class="val-type">str</span></td>
+          </tr>
+          <tr>
+            <td><code>providers.*.token_env</code></td>
+            <td>Env var holding the access token. Must be unique per provider type.</td>
+            <td><span class="val-type">str</span></td>
+          </tr>
+          <tr>
+            <td><code>rules[].branch_pattern</code></td>
+            <td>Python regex matched against each branch name.</td>
+            <td><span class="val-type">regex</span></td>
+          </tr>
+          <tr>
+            <td><code>rules[].destinations[].base</code></td>
+            <td>Base branch the PR targets.</td>
+            <td><span class="val-type">str</span></td>
+          </tr>
+          <tr>
+            <td><code>GITHUB_APP_ID</code></td>
+            <td>GitHub App numeric ID (alternative to inline <code>app_id</code>).</td>
+            <td><span class="val-type">env</span></td>
+          </tr>
+          <tr>
+            <td><code>GITHUB_INSTALLATION_ID</code></td>
+            <td>GitHub App installation ID.</td>
+            <td><span class="val-type">env</span></td>
+          </tr>
+          <tr>
+            <td><code>GITHUB_APP_PRIVATE_KEY</code></td>
+            <td>GitHub App PEM key as a string (alternative to <code>private_key_path</code>).</td>
+            <td><span class="val-type">env</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ── Troubleshooting ────────────────────────────────────── -->
+<section aria-labelledby="faq-title">
+  <div class="container">
+    <p class="section-label">Troubleshooting</p>
+    <h2 class="section-title" id="faq-title">Common issues</h2>
+    <p class="section-desc">Most issues come down to auth, branch regex, or credential uniqueness.</p>
+
+    <details>
+      <summary>No PRs created — branches exist but daemon is silent</summary>
+      <div class="faq-body">
+        <p>Check the daemon output first. Look for lines prefixed with <code>[SCAN]</code> to see which branches were evaluated and why they were skipped.</p>
+        <p style="margin-top:10px">Common causes:</p>
+        <ul style="padding-left:18px;margin-top:6px;line-height:1.9">
+          <li>Branch pattern does not match. Test your regex: <code>import re; re.match(r'^image-updater/.*', 'image-updater/my-branch')</code></li>
+          <li><code>dry_run: true</code> — PRs are simulated only.</li>
+          <li>Provider is disabled (<code>enabled: false</code>).</li>
+          <li>A PR already exists for that branch — duplicates are skipped.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details>
+      <summary>GitHub App: FileNotFoundError on private key</summary>
+      <div class="faq-body">
+        <p>If <code>private_key_path</code> is set, the file must exist. The daemon raises <code>FileNotFoundError</code> at startup rather than silently falling back to the env var.</p>
+        <pre>FileNotFoundError: Private key file not found: /secrets/github.pem</pre>
+        <p style="margin-top:10px">Either correct the path or remove <code>private_key_path</code> and set <code>GITHUB_APP_PRIVATE_KEY</code> as an environment variable instead.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>ValueError: duplicate token_env across providers</summary>
+      <div class="faq-body">
+        <p>Each provider of the same type must map to a distinct environment variable. The daemon refuses to start if two providers share the same <code>token_env</code>:</p>
+        <pre>ValueError: Duplicate token_env 'BITBUCKET_TOKEN' across bitbucket providers: bitbucket, bitbucket-org2</pre>
+        <p style="margin-top:10px">Fix by assigning unique env var names:</p>
+        <pre>providers:
+  bitbucket:
+    token_env: BITBUCKET_TOKEN
+  bitbucket-org2:
+    type: bitbucket
+    token_env: BITBUCKET_ORG2_TOKEN   # must differ</pre>
+      </div>
+    </details>
+
+    <details>
+      <summary>GitHub installation_id vs app_id confusion</summary>
+      <div class="faq-body">
+        <p><code>app_id</code> is shown on the GitHub App settings page (Settings &rarr; Developer settings &rarr; GitHub Apps &rarr; your app). The <code>installation_id</code> is found at <code>https://github.com/organizations/&lt;org&gt;/settings/installations</code> — it appears in the URL when you click on the installed app.</p>
+        <p style="margin-top:10px">Both must be strings (quoted) in config.yaml.</p>
+      </div>
+    </details>
+  </div>
+</section>
+
+<!-- ── Footer ────────────────────────────────────────────────── -->
+<footer>
+  <div class="container">
+    <div class="footer-inner">
+      <p>Released under the <a href="https://github.com/devops-ia/pr-generator/blob/main/LICENSE" target="_blank" rel="noopener">Apache 2.0 License</a>. Maintained by <a href="https://github.com/devops-ia" target="_blank" rel="noopener">devops-ia</a>.</p>
+      <nav class="footer-links" aria-label="Footer links">
+        <a href="https://github.com/devops-ia/pr-generator" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://pypi.org/project/pr-generator/" target="_blank" rel="noopener">PyPI</a>
+        <a href="https://devops-ia.github.io/helm-pr-generator/" target="_blank" rel="noopener">Helm Chart</a>
+        <a href="https://github.com/devops-ia/pr-generator/blob/main/README.md" target="_blank" rel="noopener">README</a>
+      </nav>
+    </div>
+  </div>
+</footer>
+
+<script>
+  /* ── Dynamic version badge ───────────────────────────────── */
+  (function loadVersion() {
+    fetch('https://raw.githubusercontent.com/devops-ia/pr-generator/main/pyproject.toml')
+      .then(function(r) { return r.ok ? r.text() : null; })
+      .then(function(text) {
+        if (!text) return;
+        var match = text.match(/^version\s*=\s*"([^"]+)"/m);
+        if (!match) return;
+        var ver = match[1];
+        var el = document.getElementById('badge-version');
+        el.src = 'https://img.shields.io/badge/version-' + encodeURIComponent(ver) + '-8B5CF6?style=flat&logo=python&logoColor=white';
+        el.alt = 'Version ' + ver;
+      })
+      .catch(function() {});
+  })();
+
+  /* ── Copy buttons ────────────────────────────────────────── */
+  function attachCopy(btnId, codeId) {
+    var btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.addEventListener('click', function() {
+      var text = (document.getElementById(codeId).innerText || '').replace(/^\$ /gm, '').trim();
+      navigator.clipboard.writeText(text).then(function() {
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+      }).catch(function() {});
+    });
+  }
+  attachCopy('copy-hero',        'hero-code');
+  attachCopy('copy-compose',     'code-compose');
+  attachCopy('copy-pip',         'code-pip');
+  attachCopy('copy-helm',        'code-helm');
+  attachCopy('copy-config',      'code-config');
+  attachCopy('copy-argocd',      'code-argocd');
+  attachCopy('copy-argocd-rule', 'code-argocd-rule');
+</script>
+
+</body>
+</html>

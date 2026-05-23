@@ -112,7 +112,35 @@ def _parse_providers_from_yaml(raw: dict) -> dict[str, ProviderConfig]:
         else:
             providers[pname] = _parse_bitbucket_provider(pname, pcfg)
 
+    _validate_token_env_uniqueness(raw)
     return providers
+
+
+def _validate_token_env_uniqueness(raw: dict) -> None:
+    """Raise if two providers of the same type share a tokenEnv value.
+
+    A duplicated tokenEnv means only one provider's credential ends up in the
+    container environment — the other silently gets the wrong token.
+    """
+    seen: dict[str, str] = {}  # tokenEnv value -> first provider name that uses it
+    for pname, pcfg in raw.items():
+        if not isinstance(pcfg, dict) or not pcfg.get("enabled", False):
+            continue
+        ptype = str(pcfg.get("type", "")).lower() or (
+            pname if pname in {"github", "bitbucket"} else ""
+        )
+        if ptype == "github" and str(pcfg.get("auth_method", "app")).lower() == "pat":
+            env = str(pcfg.get("token_env", "GITHUB_TOKEN"))
+        elif ptype == "bitbucket":
+            env = str(pcfg.get("token_env", "BITBUCKET_TOKEN"))
+        else:
+            continue
+        if env in seen:
+            raise ValueError(
+                f"[Core] Providers '{seen[env]}' and '{pname}' both use tokenEnv '{env}'. "
+                "Each provider must use a unique env var name to avoid credential collisions."
+            )
+        seen[env] = pname
 
 
 def _parse_github_provider(name: str, gh: dict) -> ProviderConfig:
@@ -198,9 +226,20 @@ def _parse_bitbucket_provider(name: str, bb: dict) -> ProviderConfig:
 
 
 def _load_private_key(gh_cfg: dict) -> str:
-    """Load GitHub App private key from file path or env var."""
+    """Load GitHub App private key from file path or env var.
+
+    If ``private_key_path`` is set but the file does not exist, a
+    ``FileNotFoundError`` is raised immediately — no silent fallthrough to the
+    env-var fallback.  That fallback is only tried when ``private_key_path`` is
+    absent or empty.
+    """
     key_path = str(gh_cfg.get("private_key_path", ""))
-    if key_path and os.path.exists(key_path):
+    if key_path:
+        if not os.path.exists(key_path):
+            raise FileNotFoundError(
+                f"[Core] private_key_path '{key_path}' does not exist. "
+                "Check the mounted secret volume or correct the path in config.yaml."
+            )
         with open(key_path) as fh:
             return fh.read()
 
