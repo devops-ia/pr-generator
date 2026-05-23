@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/devops-ia/pr-generator/compare/v1.0.2...v1.1.0) (2026-05-23)
+
+
+### Features
+
+* add private key path validation and tokenEnv uniqueness check ([17be451](https://github.com/devops-ia/pr-generator/commit/17be45177c7d57177b1d8ee93be6851f7c498c62))
+
 ## [1.0.2](https://github.com/devops-ia/pr-generator/compare/v1.0.1...v1.0.2) (2026-03-26)
 
 
