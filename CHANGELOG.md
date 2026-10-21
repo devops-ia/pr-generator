@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/devops-ia/pr-generator/compare/v1.3.0...v1.3.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **deps:** bump the pip group with 4 updates ([#34](https://github.com/devops-ia/pr-generator/issues/34)) ([26c51a4](https://github.com/devops-ia/pr-generator/commit/26c51a4922aefd1624873df58c2b5553253da71c))
+
 # [1.3.0](https://github.com/devops-ia/pr-generator/compare/v1.2.0...v1.3.0) (2026-05-23)
 
 
