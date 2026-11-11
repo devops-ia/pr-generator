@@ -1,7 +1,7 @@
 # ============================================================
 # Stage 1: Install Python dependencies
 # ============================================================
-FROM python:3.14-slim AS builder
+FROM python:3.15-slim AS builder
 
 WORKDIR /build
 COPY requirements.txt pyproject.toml ./
@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt && \
 # ============================================================
 # Stage 2: Minimal runtime image
 # ============================================================
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 LABEL maintainer="amartingarcia, ialejandro"
 
